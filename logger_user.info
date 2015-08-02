@@ -1,0 +1,8 @@
+name = "Logger-User Module"
+description = "Log the users information for record."
+core = 7.x
+version = 7.x-0.0
+package = "Custom"
+configure = admin/reports/logger_user
+
+dependencies[] = dblog

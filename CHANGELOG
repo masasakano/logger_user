@@ -1,0 +1,4 @@
+-----
+2015-08-03  Masa Sakano
+
+ * Initial commit. Only displaying the resuit, using the tables that belong to the core. Database table logger_user_users is created on installing, but no change is made. The routines to handle the table of this module are partially in the code.  It works OK with no (known) error.
