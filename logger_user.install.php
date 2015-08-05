@@ -190,7 +190,7 @@ function logger_user_schema() {
     }
   }
 
-  // Deletes "Primary Key: " from descriptions in some.
+  // Deletes "Primary Key: " from descriptions in some (rid, wid).
   foreach ($arfield as $key => $value) {
     if ($key == 'uid') {
       continue;

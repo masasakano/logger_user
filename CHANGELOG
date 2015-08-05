@@ -1,4 +1,9 @@
 -----
+(Version: v0.1)
+2015-08-06  Masa Sakano
+ * Major update. The module now stores the own data in the database logger_user_users, and uses it for everything. logger_user.common.inc.php is added, in which Class LoggerUser is defined.
+
+-----
 2015-08-03  Masa Sakano
 
  * Initial commit. Only displaying the resuit, using the tables that belong to the core. Database table logger_user_users is created on installing, but no change is made. The routines to handle the table of this module are partially in the code.  It works OK with no (known) error.

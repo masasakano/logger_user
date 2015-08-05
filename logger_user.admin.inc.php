@@ -8,405 +8,34 @@
  */
 
 global $language;
+//define('LOGGER_USER_USE_OWN_DB', FALSE);	// Not use our database to display.
+define('LOGGER_USER_USE_OWN_DB', TRUE);
 define('LOGGER_USER_DEFAULT_N_ENTRIES', 50);	// Default number of entries per page.
 define('LOGGER_USER_DEFAULT_FMT', 'standard');	// Default format.
 
-/**
- * Selects which columns to display.
- * 
- * @param string $fmt
- *   Choices: (concise|standard|all)
- * @param string $purpose
- *   Choices: (colnames|header|main)
- * @param array $opts
- *   (optional) NULL or an associative array containing:
- *     - tbls: array.  Default: array('u', 'w', 'r'), ie, users, watchdog, role
- * @param object $eachres
- *   (optional) Each of the return of @ref db_select()->execute(),
- *     only read when $purpose=='main'.  Received as a reference.
- * @return array
- *   - For the ARG[1] of 'colnames', just returns the associative array like:
- *     @code
- *    array('u' => array('uid', 'name'), 'w' => array('wid'),
- *          'alias' => array('r' => array('name' => 'rolename')))
- *     @endcode
- *   - For other ARG[1], the associative array.
- */
-function _logger_user_select_columns($fmt, $purpose, $opts = array(), &$eachres = NULL) {
-
-  if (! $opts) {
-    $opts = array();
-  }
-  if (! array_key_exists('tbls', $opts)) {
-    $opts['tbls'] = array('u', 'w', 'r');	// Default.
-  }
-
-  $hsuserstatus = array(
-    0 => 'Blocked',
-    1 => 'Active',
-    2 => 'never',
-  );
-
-  $arbase = array(
-    'uid'       => array('data' => t('UID'),  'field' => 'u.uid'),
-    'name'      => array('data' => t('User'), 'field' => 'u.name'),
-    'mail'      => array('data' => t('Mail'), 'field' => 'u.mail'),
-    'created'   => array('data' => t('Created'),       'field' => 'u.created', 'sort' => 'desc'),
-    'access'    => array('data' => t('Last access'),   'field' => 'u.access', 'sort' => 'desc'),
-    'login'     => array('data' => t('Last login'),    'field' => 'u.login', 'sort' => 'desc'),
-    'status'    => array('data' => t('Status'),        'field' => 'u.status'),
-    'timezone'  => array('data' => t('Time zone'),     'field' => 'u.timezone'),
-    'language'  => array('data' => t('Language'),      'field' => 'u.language'),
-    'init'      => array('data' => t('Initial email'), 'field' => 'u.init'),
-    'wid'       => array('data' => t('WD ID'), 'field' => 'w.wid'),
-    'timestamp' => array('data' => t('Date'),  'field' => 'w.timestamp', 'sort' => 'desc'),
-    'hostname'  => array('data' => t('Hostname'), 'field' => 'w.hostname'),
-    'message'   => array('data' => t('Watchdog Message'), 'field' => 'w.message'),
-    'link'      => array('data' => t('WD Link'),  'field' => 'w.link'),
-    'inusers'   => array('data' => t('In users?'),    'field' => 'l.inusers'),
-    'inwatchdog'=> array('data' => t('In watchdog?'), 'field' => 'l.inwatchdog'),
-    'rid'       => array('data' => t('RID'),  'field' => 'r.rid'),
-    'rolename'  => array('data' => t('Role'), 'field' => 'r.name'),
-  );
-
-  $arcol2use = array(
-    'concise' => array(
-      'timestamp', 'name', 'rolename', 'status', 'mail', 'hostname',
-    ),
-    'standard' => array(
-      'timestamp', 'name', 'rolename', 'status', 'mail', 'hostname', 'uid', 'language',
-    ),
-    'all' => array(
-      'wid',
-      'inwatchdog',
-      'timestamp',
-      'uid',
-      'name',
-      'inusers',
-      'rolename',
-      'status',
-      'mail',
-      'init',
-      'hostname',
-      'language',
-      'created',
-      'access',
-      'login',
-      'message',
-      'link',
-    ),
-  );
-
-  // Modifies $arbase, aka removes the elements not needed,
-  // following the argument given to the function.
-  $arkey2del = array();
-  foreach ($arbase as $kbase => $eacha) {
-    $arkey2del[] = $kbase;
-    foreach ($opts['tbls'] as $tbl) {
-      if (preg_match('/^([^.]+)\.(\S+)/', $eacha['field'], $m)) {
-        if ($m[1] === $tbl) {
-          // The element is used here.
-          array_pop($arkey2del);
-          break;
-        }
-      }
-    }
-  }
-  foreach ($arkey2del as $eachk) {
-    unset($arbase[$eachk]);
-  }
-
-  switch($purpose){
-  case 'colnames':
-    $arret = array();
-    foreach ($arbase as $key => $eacha) {
-              // 'rolename'  => array('data' => t('Role'), 'field' => 'r.name')
-      if (preg_match('/^([^.])\.(\S+)/', $eacha['field'], $m)) {
-        if ($key === $m[2]) {
-          // No alias.
-          $arret[$m[1]][] = $m[2];
-        }
-        else {
-          $arret['alias'][$m[1]][$m[2]] = $key;
-             // ['alias'][ 'r' ]['name']= 'rolename'
-        }
-      }
-      else {
-        drupal_set_message(sprintf('Should not happen. Contact the developer. logger_user_select_columns: eacha_field=(%s). (Check $arbase.)', $eacha['field']), 'error');
-      }
-    }
-    return $arret;
-    break;
-
-  case 'header':
-    $arret = array();
-    foreach ($arcol2use[$fmt] as $eachname) {
-      $artmp = array();
-      foreach (array('data', 'field', 'sort') as $eacharykey) {
-        if (!empty($arbase[$eachname][$eacharykey])) {
-          $artmp[$eacharykey] = $arbase[$eachname][$eacharykey];
-        }
-      }
-      $arret[] = $artmp;
-    }
-    if (($fmt !== 'concise') && ($fmt !== 'all')) {
-      $arret[] = array('data' => t('Operations'));
-    }
-    return $arret;
-    break;
-
-  case 'main':
-    $arret = array('data' => array());
-    $ardata = array();
-    foreach ($arcol2use[$fmt] as $eachname) {
-      switch($eachname) {
-      case 'name':
-        $ardata[] = theme('username', array('account' => $eachres));
-        break;
-
-      case 'status':
-        if ($eachres->login < 1) {
-          $userstatus = 2;
-        }
-        else {
-          $userstatus = $eachres->$eachname;
-        }
-        $ardata[] = $hsuserstatus[$userstatus];
-        break;
-
-      case 'wid':
-        $ardata[] = 
-          l(sprintf('%d', $eachres->$eachname),
-            sprintf('admin/reports/event/%d', $eachres->$eachname),
-            array('language' => $language)
-          );
-        break;
-
-      case 'uid':
-        $ardata[] = sprintf("%d", $eachres->$eachname);
-        break;
-
-      case 'link':
-        $ardata[] = filter_xss($eachres->$eachname);
-        break;
-
-      case 'init':
-        if ($eachres->init == $eachres->mail) {
-          $ardata[] = '*SAME*';
-        }
-        else {
-          $ardata[] = trim($eachres->$eachname);
-        }
-        break;
-
-      default:
-        if (array_key_exists('sort', $arbase[$eachname])) {
-          // Date-type.
-          $ardata[] = format_date($eachres->$eachname, 'short');
-        }
-        else {
-          $ardata[] = trim($eachres->$eachname);
-//drupal_set_message(sprintf('logger_user_select_columns: eachname=(%s)(%s).', $eachname, trim($eachres->$eachname)), 'warning');
-        }
-      }	// switch($eachname) {
-    }	// foreach ($arcol2use[$fmt] as $eachname) {
-
-    if (($fmt !== 'concise') && ($fmt !== 'all')) {
-      $ardata[] = filter_xss($eachres->link);
-    }
-
-    $arret = array('data' => $ardata);
-    return $arret;
-    break;
-
-  default:
-    drupal_set_message(sprintf('Should not happen. Contact the developer. logger_user_select_columns: Purpose=(%s).', $purpose), 'error');
-  }	// switch($purpose){
-
-}	// function _logger_user_select_columns($fmt, $purpose, &$eachres) {
-
-
-/**
- * Initialise Database table logger_user_users
- *
- * Algorithm is,
- *   1. UPDATE (existing rows, reflecting the newest parent tables).
- *   2. Finds change in CREATED, if there is any (which should not happen).
- *   3. INSERT IGNORE INTO
- *   4. Updates inusers and inwatchdog if they have changed to FALSE from TRUE.
- *
- * @return boolean
- *   TRUE if initialised, FALSE if not.
- */
-function logger_user_usersinit() {
-  $db = 'logger_user_users';
-  $prefixdb = 'l';
-
-  $hsnrow = array();
-  $hsnrow['initial'] = db_select($db, $prefixdb)
-    ->fields($prefixdb, array('uid'))
-    ->execute()
-    ->rowCount();
-
-  if ($hsnrow['initial'] > 0) {
-    $msg = sprintf(
-      'Database (%s) already has a row(s); logger_user_usersinit() does nothing.',
-      $db
-    );
-    drupal_set_message($msg, 'warning');
-    return FALSE;
-  }
-  else {
-    // UPDATE the database table logger_user_users first.
-    $hsdbot = array(
-      'u' => 'users',
-      'r' => 'users_roles',	// Note 'r' is elsewhere used for Table 'role'.
-      'w' => 'watchdog',
-    );
-    $hsquery_set_extra = array(
-      'u' => ', l.inusers = 1',		// Set if found in users.
-      'r' => '',
-      'w' => ', l.inwatchdog = 1',	// Set if found in watchdog.
-    );
-    $hswhere = array(
-      'u' => 'l.uid = u.uid AND l.created = u.created',
-      'r' => 'l.uid = r.uid AND l.rid != r.rid',
-      'w' => "w.type = 'user' AND SUBSTRING(w.message FROM 1 FOR 3) = 'New' AND SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = l.uid",
-    );
-
-    foreach (array_keys($hsdbot) as $prefixot) {
-      // Main loop for initialising Table 'logger_user_users'
-
-      $dbot = $hsdbot[$prefixot];
-      $allfields = _logger_user_select_columns(
-        'all',
-        'colnames',
-        array('tbls' => array($prefixot))
-      );
-
-      // Constructing a string for "UPDATE SET", ie., "l.name=u.name, ...".
-      $arcolname = array();
-      foreach ($allfields as $k => $eacha) {
-        if ($prefixot != $k) {
-          continue;	// Should not happen.
-        }
-        foreach ($eacha as $eachv) {
-          if ('uid' == $eachv) {
-            continue;
-          }
-          $arcolname[] = sprintf('%s.%s = %s.%s', $prefixdb, $eachv, $prefixot, $eachv);
-        }
-      }
-      $query_set = implode(', ', $arcolname) . $hsquery_set_extra[$prefixot];
-
-drupal_set_message('All2349= ' . var_export($arcolname, TRUE), 'status');
-// drupal_set_message('here 0003', 'warning');
-      $query = sprintf(
-        'UPDATE {%s} AS %s, {%s} AS %s SET %s WHERE %s;',
-        $db,
-        $prefixdb,
-        $dbot, 
-        $prefixot,
-        $query_set,
-        $hswhere[$prefixot]
-      );
-drupal_set_message('Query2349= ' . var_export($query, TRUE), 'status');
-      $result = db_query($query);
-
-      $hsnrow['update'] = $result->rowCount();	// Number of updated rows.
-    }
-    drupal_set_message(sprintf('Database (%s) initialised.', $db), 'status');
-    drupal_set_message('Result= ' . var_export($result, TRUE), 'status');
-    return TRUE;
-  }
+$is_found = FALSE;
+foreach (array('', '.php') as $suffix) {
+	$f = sprintf(
+		'%s/%s/%s',
+		DRUPAL_ROOT,
+		drupal_get_path('module', 'logger_user'),
+		'logger_user.common.inc' . $suffix
+	);
+	if (file_exists($f)) {
+		require_once $f;
+		$is_found = TRUE;
+		break;
+	}
 }
 
-
-
-/**
- * Merge DB users to logger_user_users
- *
- */
-function logger_user_usersupdate($filter) {
-  $db = 'logger_user_users';
-  $queries = array();
-
-  $outfields = array_keys(drupal_get_schema($db)['fields']);
-  foreach (array(0, 1) as $i) {
-    $queries[$i] = db_select($db, 'l')
-      ->fields('l', $outfields);
-  }
-  $queries[0]->leftJoin( 'users', 'u', "l.uid = u.uid");
-  $queries[1]->rightJoin('users', 'u', "l.uid = u.uid");
-  foreach (array(0, 1) as $i) {
-    $queries[$i]->leftJoin('users_roles', 'ur', "l.uid = ur.uid OR u.uid = ur.uid");
-    $queries[$i]->leftJoin('role', 'r', "ur.rid = r.rid");
-    $queries[$i]->condition('u.uid', '0', '>');
-  }
-
-  $allfields = _logger_user_select_columns(
-    'all',
-    'colnames',
-    array('tbls' => array('u', 'r'))
-  );
-  foreach ($allfields as $key => $eacha) {
-    if ('alias' === $key) {
-      continue;
-    }
-    else {
-      foreach (array(0, 1) as $i) {
-        $queries[$i]->fields($key, $eacha);	// Can not specify the alias.
-      }
-    }
-  }
-  // $query->fields('u', array('uid', 'name', 'mail', 'created', 'access', 'login', 'status', 'timezone', 'language', 'init'));	// Can not specify the alias.
-  // $query->fields('w', array('wid', 'timestamp', 'hostname', 'message', 'link'));	// Can not specify the alias.
-  foreach ($allfields['alias'] as $key_in_db => $allary) {
-    foreach ($allary as $name_in_db => $alias) {
-      foreach (array(0, 1) as $i) {
-        $queries[$i]->addField($key_in_db, $name_in_db, $alias);
-        // $query->addField('r', 'name', 'rolename');	// Name crash with u.name
-      }
-    }
-  }
-
-  // $query2 = db_select('comment', 'c')
-  //   ->fields('c', array('uid', 'nid', 'created'))
-  //   ->orderBy('created', 'DESC');
-  // $query1->union($query2, 'UNION ALL');
-  $queries[0]->union($queries[1], 'UNION ALL');
-  $result = $queries[0]->execute();
-
-  foreach ($result as $eachres) {
-drupal_set_message('New-eachres='.var_export($eachres, TRUE), 'status');
-    break;
-  }
-//   $result = db_query(<<<EOD
-//     SELECT w.type,u.name,u.mail,u.created,w.timestamp,w.link,u.uid,ur.rid,r.name
-//      FROM {watchdog} w
-//      LEFT JOIN {users} u
-//       ON SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid 
-//      LEFT JOIN {users_roles} ur ON u.uid = ur.uid
-//      LEFT JOIN {role} r ON ur.rid = r.rid
-//      WHERE w.type = 'user' AND SUBSTRING(w.message FROM 1 FOR 8) = 'New user'
-//     UNION
-//     SELECT w.type,u.name,u.mail,u.created,w.timestamp,w.link,u.uid,ur.rid,r.name
-//      FROM {watchdog} w
-//      RIGHT JOIN {users} u
-//       ON SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid 
-//      LEFT JOIN {users_roles} ur ON u.uid = ur.uid
-//      LEFT JOIN {role} r ON ur.rid = r.rid
-//      WHERE u.uid != 0
-//      ORDER BY uid
-//      LIMIT 3;
-
+if (! $is_found) {
+	drupal_set_message('logger_user.common.inc is not found.', 'error');
+	return FALSE;
 }
+
 
 /**
  * Page callback: Displays a listing of database log messages.
- *
- * Messages are truncated at 56 chars. Full-length messages can be viewed on the
- * message details page.
  *
  * @see logger_user_filter_form()
  * @see logger_user_menu()
@@ -418,21 +47,25 @@ drupal_set_message('New-eachres='.var_export($eachres, TRUE), 'status');
  *   - logger_user_filter_form:
  */
 function logger_user_overview() {
-  $hsuserstatus = array(
-    0 => 'Blocked',
-    1 => 'Active',
-    2 => 'never',
-  );
-  $n_limit = LOGGER_USER_DEFAULT_N_ENTRIES;
+  $n_limit = LOGGER_USER_DEFAULT_N_ENTRIES;	// Default
 
   $filter = logger_user_build_filter_query();
   if (empty($filter['columnsdisplayed'])) {
-	// Not specified, so default is set.
+		// Not specified, so default is set.
     $filter['columnsdisplayed'] = LOGGER_USER_DEFAULT_FMT;
   }
 
-  logger_user_usersinit();
-  logger_user_usersupdate($filter);	// ????????????
+	$hsnrow = LoggerUser::update_db_users();
+  $arprint = LoggerUser::message_update_db_users(
+		$hsnrow,
+		//array('purpose' => 'message')	// No log in watchdog, but displays.
+		array('purpose' => 'watchdog')	// Leaves the log in watchdog, too.
+	);
+	foreach ($arprint as $eachh) {
+		$eachh['message'] = preg_replace('/\n/', '<br />', $eachh['message']);
+		$ty = LoggerUser::get_drupal_message_type($eachh['severity']);
+		drupal_set_message($eachh['message'], $ty);
+	}
 
 //drupal_set_message(var_export($filter, TRUE), 'status');
   $rows = array();
@@ -444,15 +77,55 @@ function logger_user_overview() {
   $build['logger_user_filter_form'] = drupal_get_form('logger_user_filter_form');
   // $build['logger_user_clear_log_form'] = drupal_get_form('logger_user_clear_log_form');
 
-  $allfields = _logger_user_select_columns($filter['columnsdisplayed'], 'colnames');
+//	$allfields = LoggerUser::select_columns(
+//		$filter['columnsdisplayed'],
+//		'colnames',
+//		array('use_own_db' => TRUE)
+//	);
+//drupal_set_message('238column=: '.var_export($allfields, TRUE), 'status');	// DEBUG
+	$allfields = LoggerUser::select_columns(
+		$filter['columnsdisplayed'],
+		'colnames',
+		array(
+			'tbls' => array('u', 'w', 'ur', 'r', 'l'),
+			'use_own_db' => LOGGER_USER_USE_OWN_DB,
+		)
+	);
+	// $allfields = LoggerUser::select_columns($filter['columnsdisplayed'], 'colnames');
 //drupal_set_message('allfields=: '.var_export($allfields, TRUE), 'status');	// DEBUG
-  $header = _logger_user_select_columns($filter['columnsdisplayed'], 'header');
-//drupal_set_message('header=: '.var_export($header, TRUE), 'status');	// DEBUG
+  // $header = _logger_user_select_columns($filter['columnsdisplayed'], 'header');
+  // $header = LoggerUser::select_columns($filter['columnsdisplayed'], 'header');
+  // $header = LoggerUser::select_columns(
+	// 	$filter['columnsdisplayed'],
+	// 	'header',
+	// 	array('use_own_db' => TRUE)
+	// );
+// drupal_set_message('239header=: '.var_export($header, TRUE), 'status');	// DEBUG
+  $header = LoggerUser::select_columns(
+		$filter['columnsdisplayed'],
+		'header',
+		array(
+			'tbls' => array('u', 'w', 'ur', 'r', 'l'),
+			'use_own_db' => LOGGER_USER_USE_OWN_DB,
+		)
+	);
+drupal_set_message('240header=: '.var_export($header, TRUE), 'status');	// DEBUG
+
+	if (LOGGER_USER_USE_OWN_DB) {
+		$aliasout = LoggerUser::tablealiases('self')[0];	// 'l'
+    $query = db_select(LoggerUser::DB_NAME, $aliasout)
+			->extend('PagerDefault')
+			->extend('TableSort');
+		$query->leftJoin('role', 'r', $aliasout . '.rid = r.rid');
+
+	}
+	else {
 
   $query = db_select('watchdog', 'w')->extend('PagerDefault')->extend('TableSort');
   $query->rightJoin('users', 'u', "SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid");
   $query->leftJoin('users_roles', 'ur', "u.uid = ur.uid");
   $query->leftJoin('role', 'r', "ur.rid = r.rid");
+	}
   foreach ($allfields as $key => $eacha) {
     if ('alias' === $key) {
       continue;
@@ -469,6 +142,9 @@ function logger_user_overview() {
    // $query->addField('r', 'name', 'rolename');	// Name crash with u.name
     }
   }
+	if (LOGGER_USER_USE_OWN_DB) {
+	}
+	else {
   $query
     ->condition('u.uid', '0', '>') 
     ->condition('w.type', 'user') 
@@ -496,17 +172,18 @@ function logger_user_overview() {
 //      LIMIT 3;
 // EOD
 //     );
+	}
 
   if (!empty($filter['ar_condition_like_field'])) {
     foreach ($filter['ar_condition_like_field'] as $i => $val) {
       $query->condition($val, $filter['ar_condition_like_data'][$i], 'LIKE');
-drupal_set_message('Filter-condition is defined: '.var_export($filter['ar_condition_like_data'], TRUE), 'status');	// DEBUG
+// drupal_set_message('Filter-condition is defined: '.var_export($filter['ar_condition_like_data'], TRUE), 'status');	// DEBUG
 //$query->condition($val, $filter['ar_condition_like_data'][$i], 'LIKE');
     }
   }
 
   if (!empty($filter['where'])) {
-drupal_set_message('Filter is defined: '.var_export($filter['args'], TRUE), 'status');	// DEBUG
+// drupal_set_message('Filter is defined: '.var_export($filter['args'], TRUE), 'status');	// DEBUG
     // $query->where("r.name = :abc", array(':abc' => 'administrator'));
     // $query->where("r.name = ?", array('administrator'));
     // $query->where("r.name = 'administrator'");
@@ -526,7 +203,7 @@ drupal_set_message('Filter is defined: '.var_export($filter['args'], TRUE), 'sta
   // $query->range(0,9)	// Standard; This puts SQL "LIMIT 9 OFFSET 0"
   $query->limit($n_limit)	// extended by 'PagerDefault', no LIMIT is set in SQL.
     ->orderByHeader($header);
-drupal_set_message('QUERY='.$query->__toString(), 'status');	// DEBUG
+// drupal_set_message('QUERY='.$query->__toString(), 'status');	// DEBUG
 
   ////
   // The following is taken from 
@@ -579,7 +256,17 @@ drupal_set_message('QUERY='.$query->__toString(), 'status');	// DEBUG
     else {
       $userstatus = $eachres->status;
     }
-    $rows[] = _logger_user_select_columns($filter['columnsdisplayed'], 'main', NULL, $eachres);
+    // $rows[] = _logger_user_select_columns($filter['columnsdisplayed'], 'main', NULL, $eachres);
+    $rows[] = LoggerUser::select_columns(
+			$filter['columnsdisplayed'],
+			'main',
+		array(
+			'tbls' => array('u', 'w', 'ur', 'r', 'l'),
+			'use_own_db' => LOGGER_USER_USE_OWN_DB,
+		),
+			//array('tbls' => array('u', 'w', 'ur', 'r', 'l')),
+			$eachres
+		);
 //drupal_set_message('rows2=: '.var_export($rows2, TRUE), 'status');	// DEBUG
 
     // $rows[] = array('data' =>
@@ -957,4 +644,24 @@ function logger_user_filter_form_submit($form, &$form_state) {
   // $form_state['rebuild'] = TRUE;
   return 'admin/reports/logger_user';
 }
+
+
+//   $result = db_query(<<<EOD
+//     SELECT w.type,u.name,u.mail,u.created,w.timestamp,w.link,u.uid,ur.rid,r.name
+//      FROM {watchdog} w
+//      LEFT JOIN {users} u
+//       ON SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid 
+//      LEFT JOIN {users_roles} ur ON u.uid = ur.uid
+//      LEFT JOIN {role} r ON ur.rid = r.rid
+//      WHERE w.type = 'user' AND SUBSTRING(w.message FROM 1 FOR 8) = 'New user'
+//     UNION
+//     SELECT w.type,u.name,u.mail,u.created,w.timestamp,w.link,u.uid,ur.rid,r.name
+//      FROM {watchdog} w
+//      RIGHT JOIN {users} u
+//       ON SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid 
+//      LEFT JOIN {users_roles} ur ON u.uid = ur.uid
+//      LEFT JOIN {role} r ON ur.rid = r.rid
+//      WHERE u.uid != 0
+//      ORDER BY uid
+//      LIMIT 3;
 

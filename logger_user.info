@@ -6,3 +6,4 @@ package = "Custom"
 configure = admin/reports/logger_user
 
 dependencies[] = dblog
+files[] = logger_user.common.inc

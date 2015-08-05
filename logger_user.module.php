@@ -16,9 +16,13 @@
  */
 function logger_user_help($path, $arg) {
   switch ($path) {
-    case "admin/help#logger_user":
-      return '<p>' . t("Display security information of user registration.") . '</p>';
-      break;
+	case "admin/help#logger_user":
+		return '<p>' . t("Display security information of user registration.") . '</p>';
+		break;
+
+	case "admin/reports/logger_user":
+		return '<p>' . t("Logger User module keeps the user registration information, even after those user accounts are cancelled and/or watchdog log is expired, and displays them on request.") . '</p>';
+		break;
   }
 } 
 
