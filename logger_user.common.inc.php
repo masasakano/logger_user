@@ -29,13 +29,17 @@ if (! $is_found) {
  */
 class LoggerUser {
 
-  const DB_NAME = 'logger_user_users';
+  const DB_NAME        = 'logger_user_users';
+  const WATCHDOG_TYPE  = 'logger_user';
+	const VARNAME_STATUS = 'logger_user_status';	// Variable name.
+	// @see hook_install().
+
   const SQL_WD_SUBSTR_COND_NEW = "SUBSTRING(w.message FROM 1 FOR 3) = 'New'";
   const SQL_WD_SUBSTR_UID = "SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5)";
-  const WATCHDOG_TYPE = 'logger_user';
 
 	// public function __construct($arguments) {
 	// }
+
 
   /**
    * Returns the table alias information.
@@ -145,9 +149,11 @@ class LoggerUser {
       'timestamp' => array('data' => t('WD Date'),  'field' => 'w.timestamp', 'sort' => 'desc'),
       'hostname'  => array('data' => t('Hostname'), 'field' => 'w.hostname'),
       'message'   => array('data' => t('Watchdog Message'), 'field' => 'w.message'),
+      'variables' => array('data' => t('WD Variables'), 'field' => 'w.variables'),
       'link'      => array('data' => t('WD Link'),  'field' => 'w.link'),
       'inusers'   => array('data' => t('In users?'),    'field' => 'l.inusers'),
       'inwatchdog'=> array('data' => t('In watchdog?'), 'field' => 'l.inwatchdog'),
+      'adminregister' => array('data' => t('Registered by admin?'), 'field' => 'l.adminregister'),
       'rid'       => array('data' => t('RID'),  'field' => 'ur.rid'),
       'rolename'  => array('data' => t('Role'), 'field' => 'r.name'),
     );
@@ -172,6 +178,7 @@ class LoggerUser {
         'init',
         'hostname',
         'language',
+				'adminregister',
         'access',
         'login',
         'timestamp',
@@ -288,7 +295,12 @@ if (FALSE) {
 			foreach ($arcol2use[$fmt] as $eachcolname) {
 				switch($eachcolname) {
 				case 'name':
-					$ardata[] = theme('username', array('account' => $eachres));
+					if ($eachres->inusers) {
+						$ardata[] = theme('username', array('account' => $eachres));
+					}
+					else {
+						$ardata[] = check_plain($eachres->$eachcolname);
+					}
 					break;
 
 				case 'status':
@@ -328,12 +340,13 @@ if (FALSE) {
 						$ardata[] = '*SAME*';
 					}
 					else {
-						$ardata[] = trim($eachres->$eachcolname);
+						$ardata[] = check_plain(trim($eachres->$eachcolname));
 					}
 					break;
 
 				case 'inusers':
 				case 'inwatchdog':
+				case 'adminregister':
 					if ($eachres->$eachcolname) {
 						$ardata[] = 'T';
 					}
@@ -342,13 +355,23 @@ if (FALSE) {
 					}
 					break;
 
+				case 'message':
+					// $ardata[] = $eachres->$eachcolname; 
+					$ardata[] = 
+						format_string($eachres->$eachcolname, unserialize($eachres->variables));
+//dpm(unserialize($eachres->variables)); 
+//$a=unserialize($eachres->variables); 
+// drupal_set_message('DEBUG-blob123 =', var_export($a, TRUE));
+//drupal_set_message('DEBUG-blob123 =', print_r($eachres->variables, TRUE));
+					break;
+
 				default:
 					if (array_key_exists('sort', $arbase[$eachcolname])) {
 						// Date-type.
 						$ardata[] = format_date($eachres->$eachcolname, 'short');
 					}
 					else {
-						$ardata[] = trim($eachres->$eachcolname);
+						$ardata[] = check_plain(trim($eachres->$eachcolname));
 //drupal_set_message(sprintf('logger_user_select_columns: eachcolname=(%s)(%s).', $eachcolname, trim($eachres->$eachcolname)), 'warning');
 					}
 				}	// switch($eachcolname) {
@@ -413,6 +436,9 @@ if (FALSE) {
 
   /**
    * Return the extra column related to the given Table alias.
+	 *
+	 * Column 'adminregister' is not considered here, because it can be
+	 * set only in hook_user_insert().
 	 *
 	 * @param string $alias
 	 *   Choices: (u|r|w)
@@ -520,6 +546,10 @@ if (FALSE) {
 				// eg., ', l.inusers = 1'
 			}
 
+			if ('u' == $aliasin) {
+				$hsaccess_prev = self::get_admins_access();
+			}
+
       $query = sprintf(
 				'UPDATE {%s} AS %s, {%s} AS %s SET %s WHERE %s;',
 				self::DB_NAME,
@@ -535,11 +565,53 @@ if (FALSE) {
 			$hsret[$aliasin] = $result->rowCount();
 			// Number of updated rows.
 
+			if (('u' == $aliasin) && $hsaccess_prev['isdefined']) {
+				$hsaccess_now = self::get_admins_access();
+				if ($hsaccess_now['access'] > $hsaccess_prev['access']) {
+					// 'access' time of you has changed in the table users.
+					// That is expected, hence the count is removed from the report.
+					$hsret[$aliasin]--;
+				}
+			}
+
 		}	// foreach ($aliases as $aliasin) {
 
     return $hsret;
 
 	}	// public static function update_db_users_update($alias) {
+
+
+  /**
+   * Gets the 'access' (time) for yourself (usually admin).
+	 *
+	 * This value changes all the time while you are browsing, of course!
+	 * And, you wouldn't need that information when seeing a log.
+	 *
+   * @return array
+	 *   An associative array containing:
+	 *   - isdefined: boolean (FALSE if user's access is not found)
+	 *   - access: int
+	 */
+  protected static function get_admins_access() {
+    $aliasout = self::tablealiases('self')[0];	// 'l'
+		$hsret = array(
+			'isdefined' => FALSE,
+			'access'  => NULL,
+		);
+
+		$result = db_select(self::DB_NAME, $aliasout)
+			->fields($aliasout, array('access'))
+			->condition('uid', $GLOBALS['user']->uid)
+			->execute();
+
+		$isaccessdefined = FALSE;
+		if ($result->rowCount() > 0) {
+			$hsret['isdefined'] = TRUE;
+			$hsret['access']  = $result->fetchCol()[0];
+		}
+
+		return $hsret;
+	}
 
 
   /**
@@ -639,9 +711,115 @@ if (FALSE) {
 
 		}	// foreach ($aliases as $aliasin) {
 
+
+		if ($hsret['w'] > 0) {
+		// if (TRUE) {
+			$ncols = self::update_db_users_update_with_wd();
+			if ($ncols > 0) {
+				$errmsg = sprintf(
+					'%d columns (likely %d rows) did not have values in name, init, created in users table, hence they are imported from watchdog table.',
+					$ncols,
+					$ncols/3
+				);
+				drupal_set_message($errmsg, 'status');
+			}
+		}
+
     return $hsret;
 
 	}	// public static function update_db_users_insert($aliases) {
+
+
+  /**
+   * Updates name and init (email) based on watchdog information.
+   *
+   * Background is as follows.
+   * When user accounts were cancelled before this module is enabled,
+   * those user information no longer exists in "users" table.
+   * However, the record may remain in "watchdog".
+   * In that case, it is possible to retrieve the user name and email address
+	 * when the user is registered from the watchdog table: the column
+	 * "variables", which is copied into the our table, logger_user_users.
+   *
+	 * This routine tries to recover those two information, which will be
+	 * stored in the column "name" and "init".
+	 * Note the "variables" column is a bynary-type data, hence it is tricky
+	 * to deal within the SQL. We update those rows one by one with Drupal.
+	 * It is expected there aren't a huge number of such rows, so it'd be OK.
+   *
+   * @return int
+	 *   The number of columns updated; usually 3 x rows (name, init, created).
+   */
+  public static function update_db_users_update_with_wd() {
+		$aliasout = self::tablealiases('self')[0];
+		$wdkeynames = array(
+			'name' => '%name',	// Key name embedded in the 'variables' column.
+			'init' => '%email',	// The same.
+			'created' => 'timestamp',
+		);
+		$nullvalues = array(
+			'name' => '',	// Technically, no null value is allowed for this in Schema.
+			'init' => '',
+			'created' => 0,
+		);
+		$extracol = array(	// Required extra column to process each.
+			'name' => 'variables',
+			'init' => 'variables',
+			'created' => 'timestamp',
+		);
+
+		$ncols = 0;
+		foreach (array_keys($wdkeynames) as $col2update) {
+			// foreach (array('mail') as $col2update) {
+			$allfields = array(
+				'wid',
+				$col2update,
+				'inwatchdog',
+				$extracol[$col2update],	// Either "variables" or "timestamp"
+			);
+
+			$result = db_select(self::DB_NAME, $aliasout)
+				->fields($aliasout, $allfields)
+				->condition('inwatchdog', TRUE)
+				->condition($col2update, $nullvalues[$col2update])
+				->execute();
+
+			foreach ($result as $eachres) {
+				switch ($col2update) {
+				case 'created':
+					$wdval = $eachres->{$wdkeynames[$col2update]} + 1;
+					// 1 second after 'timestamp' seems a norm for 'created'.
+					break;
+				default:
+					$a = unserialize($eachres->variables);	// Binary BLOB data.
+					$wdval = $a[$wdkeynames[$col2update]];
+				}
+
+				$num_updated = db_update(self::DB_NAME)
+					->fields(array( $col2update => $wdval ))
+					->condition('wid', $eachres->wid, '=')
+					->execute();
+
+				if ($num_updated !== 1) {
+					$errmsg = sprintf(
+						'Row (UID=%d, WID=%d, name=(%s)) failed to be updated to (%s) for Column=(%s) based on watchdog (num_updated=%d).',
+						$eachres->uid,
+						$eachres->wid,
+						$eachres->name,
+						$wdval,
+						$col2update,
+						$num_updated
+					);
+					drupal_set_message($errmsg . '.', 'error');
+				}
+				else {
+					$ncols++;
+				}	// if ($num_updated !== 1) {
+			}	// foreach ($result as $eachres) {
+		}	// foreach (array('name', 'mail') as $col2update) {
+
+		return $ncols;
+	}	// public static function update_db_users_update_with_wd() {
 
 
   /**
@@ -649,7 +827,7 @@ if (FALSE) {
    *
    * Algorithm is,
    *   1. UPDATE (existing rows, reflecting the newest parent tables).
-   *   2. Finds change in CREATED, if there is any (which should not happen).
+   *   2. Finds change in the column "created", if any (should not happen!).
    *   3. INSERT IGNORE INTO
    *   4. UPDATE for users_roles and watchdog
    *   5. Updates inusers and inwatchdog to FALSE, if that is the case.
@@ -794,6 +972,12 @@ if (FALSE) {
     $hsnrow['status'] = TRUE;
 		// Database successfully updated.
 
+		// Sets the variable 'logger_user_status' (registered in Drupal)
+		// @see logger_user.install
+		$gstatus = variable_get(self::VARNAME_STATUS);
+		$gstatus['timeupdated'] = time();
+		variable_set(self::VARNAME_STATUS, $gstatus);
+
 		return $hsnrow;
   }	// public static function update_db_users() {
 
@@ -835,7 +1019,7 @@ if (FALSE) {
 		if (! $hsnrow['status']) {
 			$msgen = 'Update failed.  Hash of the number of affected rows: @data';
 			$vars = array('@data' => var_export($hsnrow, TRUE));
-			$arret[] = array();
+			$lastindex = count($arret) - 1;
 			$arret[$lastindex]['severity'] = WATCHDOG_ERROR;
 			$arret[$lastindex]['message']  = t($msgen, $vars);
 		}
@@ -844,39 +1028,61 @@ if (FALSE) {
 			if ($hsnrow['created_changed'] > 0) {
 				$msgen = 'Column "created" in Table users had changed in @created row(s).';
 				$vars = array('@created' => sprintf('%d', $hsnrow['created_changed']));
-				$arret[] = array();
 				$lastindex = count($arret) - 1;
 				$arret[$lastindex]['severity'] = WATCHDOG_WARNING;
 				$arret[$lastindex]['message']  = t($msgen, $vars);
 			}
 
-			if ($hsnrow['initial'] === $hsnrow['end']) {
-				// No change happened.
-			}
-			else {
+			// if ($hsnrow['initial'] === $hsnrow['end']) {
+			// 	// No change happened.
+			// }
+			// else {
 
-				$arret[] = array();
-				$lastindex = count($arret) - 1;
-				$arret[$lastindex]['severity'] = WATCHDOG_NOTICE;
 				$armsg = array();
 				$vars = array();
-				$armsg[] = 'Database table(@tbl) updated with +@diff new rows (@initial => @end) since the last (maybe cron-ed) update.  Details: ';
+				$ntotal = 0;
+				// The total number of rows that have changed.
+				// If the same row is inserted and updated, then it can be +2 or more.
+				// This variable is used to judge simply if any row is updated.
+
+				$gstatus = variable_get(self::VARNAME_STATUS);
+				$ntotal += $gstatus['nnewusers'];
+
+drupal_set_message('DEBUGms: gstatus=' . var_export($gstatus, TRUE), 'warning');
+drupal_set_message('DEBUGmsg: hsnrow=' . var_export($hsnrow, TRUE), 'warning');
+				$tmpmsg =
+					'Database table (@tbl) updated with +@diff new rows (@last => @end) ';
+				if ($gstatus['lastaccessed']) {
+					$tmpmsg .= 'since the last explicit update at @lasttime.  Details: ';
+					$vars['@lasttime'] = format_date($gstatus['lastaccessed']);
+				} else {
+					$tmpmsg .= 'for the first time.  Details: ';
+				}
+
+				$armsg[] = $tmpmsg;
 				$vars['@tbl'] = self::DB_NAME;
-				$vars['@diff']    = sprintf('%d', $hsnrow['end'] - $hsnrow['initial']);
-				$vars['@initial'] = sprintf('%d', $hsnrow['initial']);
-				$vars['@end']     = sprintf('%d', $hsnrow['end']);
+				$nrowslast = $hsnrow['initial'] - $gstatus['nnewusers'];
+				$vars['@last'] = sprintf('%d', $nrowslast);
+				$vars['@end']  = sprintf('%d', $hsnrow['end']);
+				$ndiff = $hsnrow['end'] - $nrowslast;
+				$ntotal += $ndiff;
+				$vars['@diff'] = sprintf('%d', $ndiff);
+				// Now, ($vars['@initial'] == $vars['@end']) should be the case,
+				// except for the initial run, providing hook_user_insert() worked.
 
 				$ary = array('update', 'insert', 'insert-update', 'disappeared');
 				foreach ($ary as $knrow) {
 					$armsgtmp = array();
 					$arvartmp = array();
-					
+
 					foreach ($hsnrow[$knrow] as $alias => $nrow) {
+					  //      eg., ['update']    'w'   =>  7 // rows updated for watchdog
 						if ($nrow > 0) {
-							$ph = '@' . $knrow . $alias;
+							$ph = '@' . $knrow . $alias;	// Place Holder
 							$armsgtmp[] = sprintf('%s(%s)', self::tablename($alias), $ph); 
 							// e.g., 'watchdog(@updatew)'
 							$arvartmp[$ph] = sprintf('%d', $nrow);
+							$ntotal += $nrow;
 						}
 					}
 					if (!empty($arvartmp)) {
@@ -884,12 +1090,17 @@ if (FALSE) {
 							' %s: %s ',
 							preg_replace('/(ed?)?$/', 'ed', ucfirst($knrow), 1),
 							implode(", ", $armsgtmp)
-						);	// e.g., ' Updated[users(@updateu), watchdog(@updatew)] '
+						);	// e.g., ' Updated: users(@UpdateU), watchdog(@UpdateW)] '
 						$vars = array_merge($vars, $arvartmp);
 					}
 				}
-				$arret[$lastindex]['message'] = t(implode("\n", $armsg), $vars);
-			}
+
+				if ($ntotal > 0) {
+					$lastindex = count($arret) - 1;
+					$arret[$lastindex]['severity'] = WATCHDOG_NOTICE;
+					$arret[$lastindex]['message'] = t(implode("\n", $armsg), $vars);
+				}
+			// }
 
 		}	// if (! $hsnrow['status']) {  --  else
 
@@ -901,6 +1112,14 @@ if (FALSE) {
 				watchdog(self::WATCHDOG_TYPE, $message, NULL, $severity);
 			}
 		}
+
+		// Updates (resets) the registered status variable.
+		// @see logger_user.install
+		$gstatus['lastaccessed'] = $gstatus['timeupdated'];
+		// $gstatus['timeupdated']; // unchanged.
+		$gstatus['nnewusers'] = 0;
+		$gstatus['nrows'] = array();
+		variable_set(self::VARNAME_STATUS, $gstatus);
 
 		return $arret;
 	}	// public static function message_update_db_users($hsnrow, $opts=NULL) {

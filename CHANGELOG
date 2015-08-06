@@ -1,5 +1,14 @@
 -----
+(Version: v0.2)
 2015-08-06  Masa Sakano
+ * Introduced the variable logger_user_status with install/uninstall hooks.
+	Implements hook_user_insert() to update the DB table.
+	logger_user_users table contains the columns of variables and adminregister and are indexed with a few columns.
+	In logger_user.common.inc get_admins_access() and update_db_users_update_with_wd() are added to treat the access time by admin separately and update name/init/created with watchdog, respectively
+
+-----
+2015-08-06  Masa Sakano
+
  * Method LoggerUser::update_db_users_insert() created.  Method name changed from LoggerUser::update_db_users_commit() to update_db_users_update().
 
 -----

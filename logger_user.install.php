@@ -45,11 +45,27 @@ function logger_user_requirements($phase) {
 
 /**
  * Implements hook_install().
+ *
+ * Sets the module-specific variable 'logger_user_status' for Drupal, which is
+ * an associative array containing:
+ *   - lastaccessed: UNIX time last viewed.
+ *   - timeupdated: UNIX time last updated due to users hook or viewed.
+ *   - nnewusers: Number of new users since lastaccessed.
+ *   - nrows: number of rows updated for each case.
+ *     @see LoggerUser::update_db_users()
  */
-/*
 function logger_user_install() {
+  $val = variable_get(LoggerUser::VARNAME_STATUS, NULL);
+	if (is_null($val)) {
+		$val = array(
+			'lastaccessed' => 0,
+			'timeupdated'  => 0,
+			'nnewusers' => 0,
+			'nrows' => array(),
+		);
+		variable_set(LoggerUser::VARNAME_STATUS, $val);
+	}
 }
-*/
 
 /**
  * Implements hook_uninstall().
@@ -62,7 +78,8 @@ function logger_user_install() {
  * @see https://api.drupal.org/api/drupal/includes!common.inc/function/drupal_install_schema/7
  */
 function logger_user_uninstall() {
-  // variable_del('dblog_row_limit');
+  // variable_del(LoggerUser::VARNAME_STATUS);	// LoggerUser may not be seen.
+  variable_del('logger_user_status');
 }
 
 /*
@@ -111,6 +128,7 @@ function logger_user_schema() {
       'timestamp',
       'hostname',
       'message',
+      'variables',
       'link',
     ),
   );
@@ -126,6 +144,13 @@ function logger_user_schema() {
       ),
       'inusers' => array(
         'description' => 'Exists(1) in users or not(0)',
+        'type' => 'int',
+        'size' => 'tiny',
+        'not null' => TRUE,
+        'default' => 0,
+      ),
+      'adminregister' => array(
+        'description' => 'Registered by admin(1) or oneself(0)',
         'type' => 'int',
         'size' => 'tiny',
         'not null' => TRUE,
@@ -216,6 +241,12 @@ function logger_user_schema() {
     'foreign keys' => $arforeign,	// For documentation only in Drupal 7
     'indexes' => array(
       'uid' => array('uid'),
+      'rid' => array('rid'),
+			'name' => array('name'),
+      'mail' => array('mail'),
+      'timezone' => array('timezone'),
+      'language' => array('language'),
+      'hostname' => array('hostname'),
     ),	// @see http://drupal.stackexchange.com/questions/75641/what-is-the-reason-to-define-indexes-in-hook-schema
     //
     // The following two are probably not needed in default.

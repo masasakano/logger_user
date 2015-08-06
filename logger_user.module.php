@@ -46,6 +46,64 @@ function logger_user_user_login(&$edit, $account) {
 */
 
 /**
+ * Implements hook_user_insert(). 
+ *
+ * Adds the information of the new user to logger_user_users table.
+ */
+function logger_user_user_insert(&$edit, $account, $category) {
+	// drupal_set_message('DEBUG: edit=' . var_export($edit, TRUE));
+	// drupal_set_message('DEBUG: account=' . var_export($account, TRUE));
+	// drupal_set_message('DEBUG: category=' . var_export($category, TRUE));
+
+	if (! $account->is_new) {
+		return;
+	}
+	$alias = 'u';
+	$fieldnames = LoggerUser::select_columns(
+		'all',	// All the columns
+		'colnames',
+		array('tbls' => array($alias))
+	);	// eg., array('u' => array('uid', 'name', ...))
+	$fieldnames[$alias][] = 'hostname';
+
+	$hsfield = array();
+	foreach ($fieldnames[$alias] as $eachcol) {
+		$hsfield[$eachcol] = $account->$eachcol;
+	}
+	$hsfield['inusers'] = TRUE;
+	$hsfield['adminregister'] = $account->administer_users;
+
+	$query = db_insert(LoggerUser::DB_NAME)
+		->fields($hsfield);
+
+	try {
+		// For this try - catch combination,
+		// @see http://drupal.stackexchange.com/questions/83811/db-insert-execute-without-auto-increment-primary-key-is-returning-0
+
+		$last_insert_id = $query->execute();
+		// No exception thrown; PDO thinks the record was inserted correctly.
+	}
+	catch (PDOException $e) {
+		// Query failed; recover based on $e->getMessage()
+		// This should not happen!
+		watchdog(
+			LoggerUser::WATCHDOG_TYPE,
+			t(
+				'Failed to record the user information for UID=(@uid), Mail=(@mail).',
+				array('@uid' => $account->uid, '@mail' => $account->mail,)
+			),
+			NULL,
+			WATCHDOG_ERROR
+		);
+		return FALSE;
+	}
+
+	$gstatus = variable_get(self::VARNAME_STATUS);
+	$gstatus['nnewusers']++;
+	variable_set(self::VARNAME_STATUS, $gstatus);
+}
+
+/**
  * Implements hook_menu().
  *
  * In this case, add the line
@@ -160,7 +218,7 @@ function logger_user_changedef_value_callback($element, $edit = FALSE) {
 function logger_user_colour_validate($element, $form_state) {
   if (!empty($element['#value'])) {
     // Check that the user-friendly value is valid (optional).
-    $clean_msg = $check_plain($form_state['values']['logger_user_message']);	# $element['#value'] may be OK, instead??
+    $clean_msg = check_plain($form_state['values']['logger_user_message']);	# $element['#value'] may be OK, instead??
     // Or, maybe do I need $form_state['values']['logger_user_message']['value']??
     if ($clean_msg != $form_state['values']['logger_user_message']) {
       // // Failed validation, return form error.
