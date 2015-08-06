@@ -465,7 +465,7 @@ if (FALSE) {
 
 
   /**
-   * Return the extra column related to the given Table alias.
+   * Return the number of the updated columns related to the given Table alias.
 	 *
 	 * @param array $aliases
 	 *   eg., array('u', 'ur', 'w'), or self::tablealiases()
@@ -473,7 +473,7 @@ if (FALSE) {
 	 *   An associative array containing,
 	 *   each table-alias with the number of affected rows, e.g, $ret['w']==67
 	 */
-  public static function update_db_users_commit($aliases) {
+  public static function update_db_users_update($aliases) {
 		$hsret = array();
 
     $aliasout = self::tablealiases('self')[0];
@@ -539,7 +539,109 @@ if (FALSE) {
 
     return $hsret;
 
-	}	// public static function update_db_users_commit($alias) {
+	}	// public static function update_db_users_update($alias) {
+
+
+  /**
+   * Return the number of the inserted columns related to the given Table alias.
+	 *
+	 * @param array $aliases
+	 *   eg., array('u', 'ur', 'w'), or self::tablealiases()
+   * @return array
+	 *   An associative array containing,
+	 *   each table-alias with the number of affected rows, e.g, $ret['w']==67
+	 */
+  public static function update_db_users_insert($aliases) {
+		$hsret = array();
+
+		$hswhere = array(
+			'u' => 'u.uid > 0',
+			'ur' => 'ur.uid > 0',
+			'w' => implode(
+				' AND ',
+				array(
+					"w.type = 'user'",
+					self::SQL_WD_SUBSTR_COND_NEW,
+					self::SQL_WD_SUBSTR_UID . ' > 0',
+				)
+			),
+		);
+
+		$hsorderby = array(
+			'u' => 'u.uid',
+			'ur' => 'ur.uid',
+			'w' => self::SQL_WD_SUBSTR_UID,
+		);
+
+		foreach ($aliases as $aliasin) {
+			// Main loop for inserting rows to Table 'logger_user_users'
+			// Note it is necessary to loop over 'u' (users) and 'w' (watchdog).
+			// Expetedly most of users recorded in watchdog are probably in users.
+			// But if the admin cancelled some accounts before this module detects,
+			// the record of those appear only in watchdog but not in users.
+
+			if ('r' == $aliasin OR 'ur' == $aliasin) {
+				// No column inserted due to updated Table users_roles
+				continue;
+			}
+
+			$dbin = self::tablename($aliasin);
+			$allfields = self::select_columns(
+				'all',	// All the columns
+				'colnames',
+				array('tbls' => array($aliasin))
+			);	// eg., array('wid', 'hostname', ...)
+
+			// Constructing a string for "INSERT INTO", ie., "u.uid, u.name, ...".
+			$arcolname = array();
+			$arcoloutname = array();
+			foreach ($allfields as $k => $eacha) {
+				if ($aliasin != $k) {
+					continue;	// Should not happen.
+				}
+				foreach ($eacha as $eachv) {
+					// nb, UID is needed; Otherwise all columns are regarded as UID==0.
+					$arcolname[] = sprintf('%s.%s', $aliasin, $eachv);
+					$arcoloutname[] = $eachv;
+				}
+			}
+
+			$s = self::columnextra($aliasin);
+			if (! empty($s)) {
+				$arcolname[] = '1';
+				$arcoloutname[] = $s;	// eg. "inusers"
+			}
+
+			if ('w' === $aliasin) {
+				// Add 'uid' in the case of watchdog.
+				// Otherwise, it would be rejected, because uid is the primary key.
+				array_unshift($arcolname, self::SQL_WD_SUBSTR_UID);
+				array_unshift($arcoloutname, 'uid');
+			}
+
+			$query = sprintf(
+				'INSERT IGNORE INTO {%s} (%s) SELECT %s FROM {%s} AS %s WHERE %s ORDER BY %s;',
+				self::DB_NAME,
+				implode(', ', $arcoloutname),
+				implode(', ', $arcolname),
+				$dbin,
+				$aliasin,
+				$hswhere[$aliasin],
+				$hsorderby[$aliasin]
+			);
+			// Note:
+			// INSERT does not accept an alias, so "WHERE uid<>u.uid" raises error.
+			// Therefore, INSERT "IGNORE" is essential.
+
+			$result = db_query($query);
+			$hsret[$aliasin] = $result->rowCount();
+			// Number of inserted rows.
+
+		}	// foreach ($aliases as $aliasin) {
+
+    return $hsret;
+
+	}	// public static function update_db_users_insert($aliases) {
 
 
   /**
@@ -592,10 +694,11 @@ if (FALSE) {
 			}
 		}
 
+		// 1. UPDATE the database table logger_user_users first.
     if ($hsnrow['initial'] > 0) {
-      // 1. UPDATE the database table logger_user_users first.
+			// Not fired in the very first run after the module is enabled.
 			$hsnrow['update'] =
-				self::update_db_users_commit(self::tablealiases('update_db'));
+				self::update_db_users_update(self::tablealiases('update_db'));
     }
 
 
@@ -611,13 +714,6 @@ if (FALSE) {
 		$result = $query->execute();
 
     $hsnrow['created_changed'] = $result->rowCount();
-
-// drupal_set_message('DEBUG9830:query: ' . $result->getQueryString(), 'error');
-// // =>  SELECT l.uid AS uid, l.created AS created, l.name AS name, u.uid AS u_uid, u.created AS u_created, u.name AS u_name FROM sc_logger_user_users l LEFT OUTER JOIN sc_users u ON l.uid = u.uid WHERE (l.created <> :db_condition_placeholder_0) AND (l.created > :db_condition_placeholder_1) 
-// drupal_set_message('DEBUG9831:result =' . var_export($result, TRUE), 'warning');
-// drupal_set_message('DEBUG9832:hsresult =' . var_export($hsresult, TRUE), 'warning');
-// drupal_set_message('DEBUG9833:hsresult[] =' . var_export($hsresult['created'], TRUE), 'warning');
-// drupal_set_message('DEBUG9834:c(hsresult[]) =' . var_export(count($hsresult['created']), TRUE), 'warning');
 
 		if ($hsnrow['created_changed'] > 0) {
 			$errmsg = sprintf(
@@ -641,98 +737,13 @@ if (FALSE) {
 
 
 		// 3. INSERT IGNORE INTO
-		if (TRUE) {
-      $hswhere = array(
-        'u' => 'u.uid > 0',
-        'ur' => 'ur.uid > 0',
-        'w' => implode(
-					' AND ',
-					array(
-						"w.type = 'user'",
-						self::SQL_WD_SUBSTR_COND_NEW,
-						self::SQL_WD_SUBSTR_UID . ' > 0',
-					)
-				),
-      );
-
-      $hsorderby = array(
-        'u' => 'u.uid',
-        'ur' => 'ur.uid',
-        'w' => self::SQL_WD_SUBSTR_UID,
-			);
-
-			foreach (self::tablealiases('update_db') as $aliasin) {
-				// Main loop for inserting rows to Table 'logger_user_users'
-				// Note it is necessary to loop over 'u' (users) and 'w' (watchdog).
-				// Expetedly most of users recorded in watchdog are probably in users.
-				// But if the admin cancelled some accounts before this module detects,
-				// the record of those appear only in watchdog but not in users.
-
-				if ('r' == $aliasin OR 'ur' == $aliasin) {
-					// No column inserted for Table users_roles
-					continue;
-				}
-
-				$dbin = self::tablename($aliasin);
-				$allfields = self::select_columns(
-					'all',	// All the columns
-					'colnames',
-					array('tbls' => array($aliasin))
-				);	// eg., array('wid', 'hostname', ...)
-
-        // Constructing a string for "INSERT INTO", ie., "u.uid, u.name, ...".
-        $arcolname = array();
-        $arcoloutname = array();
-        foreach ($allfields as $k => $eacha) {
-          if ($aliasin != $k) {
-            continue;	// Should not happen.
-          }
-          foreach ($eacha as $eachv) {
-            // nb, UID is needed; Otherwise all columns are regarded as UID==0.
-            $arcolname[] = sprintf('%s.%s', $aliasin, $eachv);
-            $arcoloutname[] = $eachv;
-          }
-        }
-
-				$s = self::columnextra($aliasin);
-				if (! empty($s)) {
-					$arcolname[] = '1';
-					$arcoloutname[] = $s;	// eg. "inusers"
-				}
-
-				if ('w' === $aliasin) {
-					// Add 'uid' in the case of watchdog.
-					// Otherwise, it would be rejected, because uid is the primary key.
-					array_unshift($arcolname, self::SQL_WD_SUBSTR_UID);
-					array_unshift($arcoloutname, 'uid');
-				}
-
-        $query = sprintf(
-          'INSERT IGNORE INTO {%s} (%s) SELECT %s FROM {%s} AS %s WHERE %s ORDER BY %s;',
-          self::DB_NAME,
-					implode(', ', $arcoloutname),
-					implode(', ', $arcolname),
-          $dbin,
-          $aliasin,
-          $hswhere[$aliasin],
-					$hsorderby[$aliasin]
-        );
-				// Note:
-				// INSERT does not accept an alias, so "WHERE uid<>u.uid" raises error.
-				// Therefore, INSERT "IGNORE" is essential.
-
-        $result = db_query($query);
-				$hsnrow['insert'][$aliasin] = $result->rowCount();
-				// Number of inserted rows.
-
-      }	// foreach (self::tablealiases('update_db') as $aliasin) {
-
-		}	// if (TRUE) {
+		$hsnrow['insert'] =
+			self::update_db_users_insert(self::tablealiases('update_db'));
 
 
     // 4. UPDATE for users_roles and watchdog
 		$hsnrow['insert-update'] =
-			self::update_db_users_commit(array('ur', 'w'));
+			self::update_db_users_update(array('ur', 'w'));
 
 
     // 5. Updates inusers and inwatchdog to FALSE, if that is the case.
@@ -892,7 +903,7 @@ if (FALSE) {
 		}
 
 		return $arret;
-	}	// public static function update_db_users_commit($hsnrow, $opts) {
+	}	// public static function message_update_db_users($hsnrow, $opts=NULL) {
 
 }	// class LoggerUser {
 

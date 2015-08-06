@@ -109,7 +109,7 @@ function logger_user_overview() {
 			'use_own_db' => LOGGER_USER_USE_OWN_DB,
 		)
 	);
-drupal_set_message('240header=: '.var_export($header, TRUE), 'status');	// DEBUG
+//drupal_set_message('240header=: '.var_export($header, TRUE), 'status');	// DEBUG
 
 	if (LOGGER_USER_USE_OWN_DB) {
 		$aliasout = LoggerUser::tablealiases('self')[0];	// 'l'
@@ -325,9 +325,9 @@ function logger_user_build_filter_query() {
   $filters = logger_user_filters();
   // e.g.,  $filters['role'] == array('title' => t('Role'), 'where' => "r.name = ?",)
 
-drupal_set_message('In logger_user_build_filter_query()...,', 'status');
-drupal_set_message(' filter='.var_export($filters, TRUE), 'status');
-drupal_set_message(' session='.var_export($_SESSION['logger_user_overview_filter'], TRUE), 'status');
+//drupal_set_message('In logger_user_build_filter_query()...,', 'status');
+//drupal_set_message(' filter='.var_export($filters, TRUE), 'status');
+//drupal_set_message(' session='.var_export($_SESSION['logger_user_overview_filter'], TRUE), 'status');
   // Build query
   $arret = array();
   $where = $args = array();

@@ -1,6 +1,11 @@
 -----
+2015-08-06  Masa Sakano
+ * Method LoggerUser::update_db_users_insert() created.  Method name changed from LoggerUser::update_db_users_commit() to update_db_users_update().
+
+-----
 (Version: v0.1)
 2015-08-06  Masa Sakano
+
  * Major update. The module now stores the own data in the database logger_user_users, and uses it for everything. logger_user.common.inc.php is added, in which Class LoggerUser is defined.
 
 -----
