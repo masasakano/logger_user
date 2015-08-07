@@ -6,23 +6,6 @@
  * 
  */
 
-$is_found = FALSE;
-foreach (array('', '.php') as $suffix) {
-	$f = drupal_get_path('module', 'logger_user')
-		. '/logger_user.common.inc'
-		. $suffix;
-	if (file_exists($f)) {
-		require_once $f;
-		$is_found = TRUE;
-		break;
-	}
-}
-
-if (! $is_found) {
-	drupal_set_message('logger_user.common.inc is not found.', 'error');
-	return FALSE;
-}
-
 /**
  * LoggerUser class to encompass functions.
  * 
@@ -89,7 +72,7 @@ class LoggerUser {
    * Selects which columns to display.
    * 
    * @param string $fmt
-   *   Choices: (concise|standard|all)
+   *   Choices: (concise|standard|all). Ignored for ARG[1]:$purpose=='colnames'
    * @param string $purpose
    *   Choices: (colnames|header|main)
    * @param array $opts
@@ -101,12 +84,23 @@ class LoggerUser {
    *   (optional) Each of the return of @ref db_select()->execute(),
    *     only read when $purpose=='main'.  Received as a reference.
    * @return array
-   *   - For the ARG[1] of 'colnames', just returns the associative array like:
+   *   - For the ARG[1] of 'colnames', returns the associative array
+	 *     for all the columns regardless of ARG[0], like:
    *     @code
    *    array('u' => array('uid', 'name'), 'w' => array('wid'),
    *          'alias' => array('r' => array('name' => 'rolename')))
    *     @endcode
-   *   - For other ARG[1], the associative array.
+   *   - For the ARG[1] of 'header', an array of associative arrays like:
+   *     @code
+	 *    array(
+   *      array('data' => 'UID', 'field' => 'u.uid', 'sort' => 'desc'),
+   *      ...
+	 *    )
+   *     @endcode
+   *   - For the ARG[1] of 'main', an associative array of an array like:
+   *     @code
+	 *    array('data' => array(5, 1234, ...));
+   *     @endcode
   **/
 	public static function select_columns($fmt, $purpose, $opts = array(), &$eachres = NULL) {
 
@@ -290,6 +284,11 @@ if (FALSE) {
 			break;
 
 		case 'main':
+			if (is_null($eachres)) {
+				drupal_set_message(sprintf('Should not happen. Contact the developer. (eachres==NULL) in logger_user_select_columns: Purpose=(%s).', $purpose), 'error');
+				return NULL;
+			}
+
 			$arret = array('data' => array());
 			$ardata = array();
 			foreach ($arcol2use[$fmt] as $eachcolname) {
@@ -304,11 +303,9 @@ if (FALSE) {
 					break;
 
 				case 'status':
-					if ($eachres->login < 1) {
+					$userstatus = $eachres->$eachcolname;
+					if ($userstatus && ($eachres->login < 1)) {
 						$userstatus = 2;
-					}
-					else {
-						$userstatus = $eachres->$eachcolname;
 					}
 					$ardata[] = $hsuserstatus[$userstatus];
 					break;
@@ -447,10 +444,10 @@ if (FALSE) {
 	 */
   public static function columnextra($alias) {
 		$hsquery_set_extra = array(
-			'u'  => 'inusers',		// Set if found in users.
-			'ur' => '',
-			'r'  => '',
-			'w'  => 'inwatchdog',	// Set if found in watchdog.
+			'u'  => array('inusers', 'status'),		// Set if found in users.
+			'ur' => array(),
+			'r'  => array(),
+			'w'  => array('inwatchdog'),	// Set if found in watchdog.
 		);
 
 		return $hsquery_set_extra[$alias];
@@ -542,8 +539,9 @@ if (FALSE) {
 
 			$s = self::columnextra($aliasin);
 			if (! empty($s)) {
-				$arcolname[] = sprintf('%s.%s = 1', $aliasout, $s);
+				$arcolname[] = sprintf('%s.%s = 1', $aliasout, $s[0]);
 				// eg., ', l.inusers = 1'
+				// nb., for 'u', $s[1]=='status', which is ignored here.
 			}
 
 			if ('u' == $aliasin) {
@@ -681,7 +679,7 @@ if (FALSE) {
 			$s = self::columnextra($aliasin);
 			if (! empty($s)) {
 				$arcolname[] = '1';
-				$arcoloutname[] = $s;	// eg. "inusers"
+				$arcoloutname[] = $s[0];	// eg. "inusers"
 			}
 
 			if ('w' === $aliasin) {
@@ -722,6 +720,7 @@ if (FALSE) {
 					$ncols/3
 				);
 				drupal_set_message($errmsg, 'status');
+				watchdog(self::WATCHDOG_TYPE, $errmsg, NULL, WATCHDOG_NOTICE);
 			}
 		}
 
@@ -924,7 +923,7 @@ if (FALSE) {
 			self::update_db_users_update(array('ur', 'w'));
 
 
-    // 5. Updates inusers and inwatchdog to FALSE, if that is the case.
+    // 5. Updates inusers (& status) and inwatchdog to FALSE, if it is the case.
     //   All the rows that have been detected in users and watchdog should
     //   be assigned with the right flag (TRUE) above.
     //   However, if a record has disappeared from inusers and/or inwatchdog
@@ -938,19 +937,34 @@ if (FALSE) {
 
 		foreach (array('u', 'w') as $aliasin) {
 			$dbin = self::tablename($aliasin);
+
+			$colextra = self::columnextra($aliasin);
+			$ar = array_map(
+				function($p) use ($aliasout) {
+					return sprintf(
+						'%s.%s = FALSE', 
+						$aliasout, 
+						$p
+					);
+				},
+				$colextra
+			);
+			$stset = implode(', ',$ar);
+
 			$query = sprintf(
-				'UPDATE {%s} AS %s SET %s.%s = FALSE WHERE %s.%s > 0 AND NOT EXISTS (SELECT * FROM {%s} AS %s WHERE %s.%s = %s.%s);',
+				// 'UPDATE {%s} AS %s SET %s.%s = FALSE WHERE %s.%s > 0 AND NOT EXISTS (SELECT * FROM {%s} AS %s WHERE %s.%s = %s.%s);',
+				'UPDATE {%s} AS %s SET %s WHERE %s.%s > 0 AND NOT EXISTS (SELECT * FROM {%s} AS %s WHERE %s.%s = %s.%s);',
 				self::DB_NAME,
-				self::tablealiases('self')[0],
-				self::tablealiases('self')[0],
-				self::columnextra($aliasin),
-				self::tablealiases('self')[0],
+				$aliasout,	// self::tablealiases('self')[0],
+				$stset,	    // self::tablealiases('self')[0],
+				// self::columnextra($aliasin),
+				$aliasout,	// self::tablealiases('self')[0],
 				$hscol2examine[$aliasin],
 				self::tablename($aliasin),
 				$aliasin,
 				$aliasin,
 				$hscol2examine[$aliasin],
-				self::tablealiases('self')[0],
+				$aliasout,	// self::tablealiases('self')[0],
 				$hscol2examine[$aliasin]
 			);
 			// e.g.,
@@ -1048,15 +1062,15 @@ if (FALSE) {
 				$gstatus = variable_get(self::VARNAME_STATUS);
 				$ntotal += $gstatus['nnewusers'];
 
-drupal_set_message('DEBUGms: gstatus=' . var_export($gstatus, TRUE), 'warning');
-drupal_set_message('DEBUGmsg: hsnrow=' . var_export($hsnrow, TRUE), 'warning');
+//drupal_set_message('DEBUGms: gstatus=' . var_export($gstatus, TRUE), 'warning');
+//drupal_set_message('DEBUGmsg: hsnrow=' . var_export($hsnrow, TRUE), 'warning');
 				$tmpmsg =
 					'Database table (@tbl) updated with +@diff new rows (@last => @end) ';
 				if ($gstatus['lastaccessed']) {
 					$tmpmsg .= 'since the last explicit update at @lasttime.  Details: ';
 					$vars['@lasttime'] = format_date($gstatus['lastaccessed']);
 				} else {
-					$tmpmsg .= 'for the first time.  Details: ';
+					$tmpmsg .= 'as the first update.  Details: ';
 				}
 
 				$armsg[] = $tmpmsg;
@@ -1118,7 +1132,7 @@ drupal_set_message('DEBUGmsg: hsnrow=' . var_export($hsnrow, TRUE), 'warning');
 		$gstatus['lastaccessed'] = $gstatus['timeupdated'];
 		// $gstatus['timeupdated']; // unchanged.
 		$gstatus['nnewusers'] = 0;
-		$gstatus['nrows'] = array();
+		// $gstatus['nrows'] = array();	// not used.
 		variable_set(self::VARNAME_STATUS, $gstatus);
 
 		return $arret;

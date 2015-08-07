@@ -61,7 +61,7 @@ function logger_user_install() {
 			'lastaccessed' => 0,
 			'timeupdated'  => 0,
 			'nnewusers' => 0,
-			'nrows' => array(),
+			// 'nrows' => array(),
 		);
 		variable_set(LoggerUser::VARNAME_STATUS, $val);
 	}

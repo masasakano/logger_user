@@ -7,3 +7,5 @@ configure = admin/reports/logger_user
 
 dependencies[] = dblog
 files[] = logger_user.common.inc
+files[] = logger_user.test
+; files[] = logger_user_unit.test	; Not picked up by simpletest

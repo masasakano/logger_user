@@ -68,10 +68,19 @@ function logger_user_user_insert(&$edit, $account, $category) {
 
 	$hsfield = array();
 	foreach ($fieldnames[$alias] as $eachcol) {
-		$hsfield[$eachcol] = $account->$eachcol;
+		if (property_exists($account, $eachcol)) {
+			// In simpletest, the property 'timezone' does not exist.
+			$hsfield[$eachcol] = $account->$eachcol;
+		}
 	}
 	$hsfield['inusers'] = TRUE;
-	$hsfield['adminregister'] = $account->administer_users;
+	if (property_exists($account, 'administer_users')) {
+		// In simpletest, the property 'administer_users' does not exist.
+		if ($account->administer_users) {
+			// $hsfield['adminregister'] = (TRUE && $account->administer_users);	// Somehow this fails.
+			$hsfield['adminregister'] = 1;
+		}
+	}
 
 	$query = db_insert(LoggerUser::DB_NAME)
 		->fields($hsfield);
@@ -91,16 +100,16 @@ function logger_user_user_insert(&$edit, $account, $category) {
 			t(
 				'Failed to record the user information for UID=(@uid), Mail=(@mail).',
 				array('@uid' => $account->uid, '@mail' => $account->mail,)
-			),
+			) . "\nMessage: " . $e->getMessage(),
 			NULL,
 			WATCHDOG_ERROR
 		);
 		return FALSE;
 	}
 
-	$gstatus = variable_get(self::VARNAME_STATUS);
+	$gstatus = variable_get(LoggerUser::VARNAME_STATUS);
 	$gstatus['nnewusers']++;
-	variable_set(self::VARNAME_STATUS, $gstatus);
+	variable_set(LoggerUser::VARNAME_STATUS, $gstatus);
 }
 
 /**
