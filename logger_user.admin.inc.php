@@ -121,11 +121,12 @@ function logger_user_overview() {
 	}
 	else {
 
-  $query = db_select('watchdog', 'w')->extend('PagerDefault')->extend('TableSort');
-  $query->rightJoin('users', 'u', "SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid");
-  $query->leftJoin('users_roles', 'ur', "u.uid = ur.uid");
-  $query->leftJoin('role', 'r', "ur.rid = r.rid");
+		$query = db_select('watchdog', 'w')->extend('PagerDefault')->extend('TableSort');
+		$query->rightJoin('users', 'u', "SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid");
+		$query->leftJoin('users_roles', 'ur', "u.uid = ur.uid");
+		$query->leftJoin('role', 'r', "ur.rid = r.rid");
 	}
+
   foreach ($allfields as $key => $eacha) {
     if ('alias' === $key) {
       continue;
@@ -134,66 +135,42 @@ function logger_user_overview() {
       $query->fields($key, $eacha);	// Can not specify the alias.
     }
   }
-  // $query->fields('u', array('uid', 'name', 'mail', 'created', 'access', 'login', 'status', 'timezone', 'language', 'init'));	// Can not specify the alias.
-  // $query->fields('w', array('wid', 'timestamp', 'hostname', 'message', 'link'));	// Can not specify the alias.
+
   foreach ($allfields['alias'] as $key_in_db => $allary) {
     foreach ($allary as $name_in_db => $alias) {
       $query->addField($key_in_db, $name_in_db, $alias);
    // $query->addField('r', 'name', 'rolename');	// Name crash with u.name
     }
   }
+
 	if (LOGGER_USER_USE_OWN_DB) {
 	}
 	else {
-  $query
-    ->condition('u.uid', '0', '>') 
-    ->condition('w.type', 'user') 
-    ->where("SUBSTRING(w.message FROM 1 FOR 8) = 'New user'");
-    // ->condition('SUBSTRING(w.message FROM 1 FOR 8)', 'New user');	// => Error!
-    // ->where("LEFT(n.nid, :len) = :str", array(':len' => strlen($string), ':str' => $string);	// Example use of the place holder.
-
-//   $result = db_query(<<<EOD
-//     SELECT w.type,u.name,u.mail,u.created,w.timestamp,w.link,u.uid,ur.rid,r.name
-//      FROM {watchdog} w
-//      LEFT JOIN {users} u
-//       ON SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid 
-//      LEFT JOIN {users_roles} ur ON u.uid = ur.uid
-//      LEFT JOIN {role} r ON ur.rid = r.rid
-//      WHERE w.type = 'user' AND SUBSTRING(w.message FROM 1 FOR 8) = 'New user'
-//     UNION
-//     SELECT w.type,u.name,u.mail,u.created,w.timestamp,w.link,u.uid,ur.rid,r.name
-//      FROM {watchdog} w
-//      RIGHT JOIN {users} u
-//       ON SUBSTRING(w.link FROM POSITION('user/' IN w.link)+5 FOR POSITION('/edit' IN w.link)-POSITION('user/' IN w.link)-5) = u.uid 
-//      LEFT JOIN {users_roles} ur ON u.uid = ur.uid
-//      LEFT JOIN {role} r ON ur.rid = r.rid
-//      WHERE u.uid != 0
-//      ORDER BY uid
-//      LIMIT 3;
-// EOD
-//     );
+		$query
+			->condition('u.uid', '0', '>') 
+			->condition('w.type', 'user') 
+			->where("SUBSTRING(w.message FROM 1 FOR 8) = 'New user'");
+      // ->condition('SUBSTRING(w.message FROM 1 FOR 8)', 'New user');	// => Error!
 	}
 
   if (!empty($filter['ar_condition_like_field'])) {
     foreach ($filter['ar_condition_like_field'] as $i => $val) {
       $query->condition($val, $filter['ar_condition_like_data'][$i], 'LIKE');
-// drupal_set_message('Filter-condition is defined: '.var_export($filter['ar_condition_like_data'], TRUE), 'status');	// DEBUG
-//$query->condition($val, $filter['ar_condition_like_data'][$i], 'LIKE');
     }
   }
 
   if (!empty($filter['where'])) {
-// drupal_set_message('Filter is defined: '.var_export($filter['args'], TRUE), 'status');	// DEBUG
-    // $query->where("r.name = :abc", array(':abc' => 'administrator'));
-    // $query->where("r.name = ?", array('administrator'));
-    // $query->where("r.name = 'administrator'");
     $query->where($filter['where'], $filter['args']);
-//drupal_set_message('Filter is defined: query='.var_export($query, TRUE), 'status');	// DEBUG
   }
 
   if (!empty($filter['entriesperpage'])) {
     if ($filter['entriesperpage'] < 1) {
-      drupal_set_message(sprintf('Entries=(%s). Contact the developer.', $filter['entriesperpage']), 'error');	// This must NOT happen, as it must be checked in the evaluation.
+			$errmsg = sprintf(
+				'Entries=(%s). Contact the developer.',
+				$filter['entriesperpage']
+			);
+      drupal_set_message($errmsg, 'error');
+			// This must NOT happen, as it must be checked in the evaluation.
     }
     else {
       $n_limit = $filter['entriesperpage'];
@@ -203,51 +180,10 @@ function logger_user_overview() {
   // $query->range(0,9)	// Standard; This puts SQL "LIMIT 9 OFFSET 0"
   $query->limit($n_limit)	// extended by 'PagerDefault', no LIMIT is set in SQL.
     ->orderByHeader($header);
-// drupal_set_message('QUERY='.$query->__toString(), 'status');	// DEBUG
-
-  ////
-  // The following is taken from 
-  // http://knackforge.com/blog/karalmax/drupal-7-creating-drupal-style-tables-paging-sorting-and-filter
-  // to make the multiple headers sortable.  But it does not work...
-  //
-  // // Check if there is sorting request
-  // if(isset($_GET['sort']) && isset($_GET['order'])){
-  //   // Sort it Ascending or Descending?
-  //   if($_GET['sort'] == 'asc')
-  //     $sort = 'ASC';
-  //   else
-  //     $sort = 'DESC';
-  //   // Which column will be sorted
-  //   switch($_GET['order']){
-  //   case 'Date':
-  //     $order = 'w.wid';
-  //     break;
-  //   case 'UID':
-  //     $order = 'u.uid';
-  //     break;
-  //   case 'Status':
-  //     $order = 'u.status';
-  //     break;
-  //   default:
-  //     $order = 'w.wid';
-  //   }
-  // }
-  // else {
-  //   // Default sort
-  //   $sort = 'ASC';
-  //   $order = 'w.wid';
-  // }
-  // 
-  // $query->orderBy($order, $sort);
-  //
-  //// Up to here.
-
-// drupal_set_message(var_export($query, TRUE), 'status');
+  // drupal_set_message('QUERY='.$query->__toString(), 'status');	// DEBUG
 
   $result = $query
     ->execute();
-// drupal_set_message('After execute', 'warning');
-
 
   foreach ($result as $eachres) {
     if ($eachres->login < 1) {
@@ -256,39 +192,16 @@ function logger_user_overview() {
     else {
       $userstatus = $eachres->status;
     }
-    // $rows[] = _logger_user_select_columns($filter['columnsdisplayed'], 'main', NULL, $eachres);
+
     $rows[] = LoggerUser::select_columns(
 			$filter['columnsdisplayed'],
 			'main',
-		array(
-			'tbls' => array('u', 'w', 'ur', 'r', 'l'),
-			'use_own_db' => LOGGER_USER_USE_OWN_DB,
-		),
-			//array('tbls' => array('u', 'w', 'ur', 'r', 'l')),
+			array(
+				'tbls' => array('u', 'w', 'ur', 'r', 'l'),
+				'use_own_db' => LOGGER_USER_USE_OWN_DB,
+			),
 			$eachres
 		);
-//drupal_set_message('rows2=: '.var_export($rows2, TRUE), 'status');	// DEBUG
-
-    // $rows[] = array('data' =>
-    //   array(
-    //     // Cells
-    //     // array('class' => 'icon'),
-    //     // t($eachres->type),
-    //     format_date($eachres->timestamp, 'short'),
-    //     // theme('logger_user_message', array('event' => $eachres, 'link' => TRUE)),	// @see logger_user_theme() in logger_user.module
-    //     theme('username', array('account' => $eachres)),
-    //     // trim($eachres->name),
-    //     trim($eachres->rolename),
-    //     $hsuserstatus[$userstatus],
-    //     trim($eachres->mail),
-    //     trim($eachres->hostname),
-    //     sprintf("%d", $eachres->uid),
-    //     trim($eachres->language),
-    //     filter_xss($eachres->link),
-    //   ),
-    //   // Attributes for tr	// for CSS?
-    //   // 'class' => array(drupal_html_class('logger_user-' . $eachres->type), $classes[$eachres->severity]),
-    // );
   }
 
   $build['logger_user_table'] = array(
@@ -328,10 +241,13 @@ function logger_user_build_filter_query() {
 //drupal_set_message('In logger_user_build_filter_query()...,', 'status');
 //drupal_set_message(' filter='.var_export($filters, TRUE), 'status');
 //drupal_set_message(' session='.var_export($_SESSION['logger_user_overview_filter'], TRUE), 'status');
+
   // Build query
   $arret = array();
   $where = $args = array();
   foreach ($_SESSION['logger_user_overview_filter'] as $key => $filter) {
+		// e.g., array ( 'role' => array ( 4 => '4', ), 'mail' => '', 'columnsdisplayed' => 'all', 'entriesperpage' => '20', )
+		$filter_where = array();
     switch($key){
     case 'entriesperpage':
       $arret[$key] = $filter;
@@ -362,17 +278,16 @@ function logger_user_build_filter_query() {
       $arret['ar_condition_like_field'][] = $filters[$key]['condition_like_field'];
       $arret['ar_condition_like_data'][] =
         implode('%',
-                array_map(function($p){return db_like($p);},
-                          explode('%', $data)
+                array_map(
+									function($p){return db_like($p);},
+									explode('%', $data)
                 )
         );
-//drupal_set_message('In logger_user_build_filter_query(), filter='.var_export($filter, TRUE), 'status');
       // Input('%.pl') => Output('%'.db_like('.pl'))	# Escape for LIKE.
       break;
 
     case 'role':
-//drupal_set_message('In logger_user_build_filter_query(), filter='.var_export($filter, TRUE), 'status');
-      $filter_where = array();
+      // $filter_where = array();
       $filter_args  = array();
       foreach ($filter as $keyrid => $value) {
         if ($keyrid <= 2) {
@@ -396,15 +311,16 @@ function logger_user_build_filter_query() {
 
     default:
       // Taken from dblog.admin.inc  (But I am afraid it would not work!!)
-      $filter_where = array();
+      // $filter_where = array();
       foreach ($filter as $value) {
         $filter_where[] = $filters[$key]['where'];
         $args[] = $value;
       }
-    }
+    }	// switch($key){
+
     if (!empty($filter_where)) {
       $where[] = '(' . implode(' OR ', $filter_where) . ')';
-    }	// switch($key){
+    }
   }	// foreach ($_SESSION['logger_user_overview_filter'] as $key => $filter) {
   $where = !empty($where) ? implode(' AND ', $where) : '';
 
@@ -417,7 +333,6 @@ function logger_user_build_filter_query() {
     $hsarg[$k] = $ec;
     $where = preg_replace('/\?/', $k, $where, 1);
   }
-//drupal_set_message('In logger_user_build_filter_query(), where='.var_export($where, TRUE), 'status');
   $arret['where'] = $where;
   $arret['args']  = $hsarg;
   // $arret['args']  = $args;
@@ -437,7 +352,12 @@ function logger_user_build_filter_query() {
 function logger_user_get_user_roles() {
   $types = array();
 
-  $result = db_query('SELECT rid,name FROM {role} ORDER BY rid');
+  // $result = db_query('SELECT rid,name FROM {role} ORDER BY rid');
+  $result = db_select('role','r')
+		->fields('r', array('rid', 'name'))
+		->orderBy('r.rid', 'ASC')
+    ->execute();
+
   foreach ($result as $object) {
     if ($object->rid != 1) {	// rid==1 for 'anonymous user'
       $types[$object->rid] = $object->name;
@@ -473,17 +393,25 @@ function logger_user_filters() {
   }
   // Authenticated with no role??
 
+	if (LOGGER_USER_USE_OWN_DB) {
+		$all = LoggerUser::tablealiases('self')[0];	// 'l'
+		$tblalias = array( 'role' => $all, 'mail' => $all, );
+	}
+	else {
+		$tblalias = array( 'role' => 'r',  'mail' => 'u', );
+	}
+
   if (!empty($types)) {
     $filters['role'] = array(
       'title' => t('Role'),
-      'where' => "r.rid = ?",
+      'where' => $tblalias['role'] . '.rid = ?',
       'options' => $types,
     );
   }
 
   $filters['mail'] = array(
     'title' => t('Mail address'),
-    'condition_like_field' => "u.mail",
+    'condition_like_field' => $tblalias['mail'] . '.mail',
     // 'condition_like_data'  => array(),
   );
 
@@ -605,16 +533,26 @@ function logger_user_filter_form_validate($form, &$form_state) {
 //drupal_set_message('Validation starts. 022.', 'error');
   if ($form_state['values']['op'] == t('Filter')) {
 //drupal_set_message('Validation starts. 025.', 'error');
-    if (empty($form_state['values']['role']) && empty($form_state['values']['entriesperpage'])) {
+    if (empty($form_state['values']['role']) &&
+	    	empty($form_state['values']['entriesperpage'])) {
 //drupal_set_message('Validation starts. 033.', 'error');
       form_set_error('role', t('You must select something to filter by.'));
     }
-    elseif ((! empty($form_state['values']['mail'])) && (preg_match('/[[:space:]\{\}\[\]\(\)\<\>!#\$\^\&\*\?\|\\\\]/u', trim($form_state['values']['mail'])))) {
-      form_set_error('mail', t('Conditions for Mail must not include a whitespace or symbols.'));
+    elseif ((! empty($form_state['values']['mail'])) &&
+        		(preg_match(
+							'/[[:space:]\{\}\[\]\(\)\<\>!#\$\^\&\*\?\|\\\\]/u',
+							trim($form_state['values']['mail'])
+						 )
+						)
+		       ) {
+			$msg = t('Conditions for Mail must not include a whitespace or symbols.');
+      form_set_error('mail', $msg);
     }
-    elseif ((! empty($form_state['values']['entriesperpage'])) && ($form_state['values']['entriesperpage'] < 1)) {
-//drupal_set_message(sprintf('Entries=(%s). Contact the developer.', $form_state['values']['entriesperpage']), 'error');
-      form_set_error('entriesperpage', t('The number entries per page must be positive.'));
+    elseif ((! empty($form_state['values']['entriesperpage'])) &&
+        		($form_state['values']['entriesperpage'] < 1)
+		       ) {
+			$msg = t('The number entries per page must be positive.');
+      form_set_error('entriesperpage', $msg);
     }
   }
 //drupal_set_message('Validation ends. 055.', 'status');

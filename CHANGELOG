@@ -1,11 +1,17 @@
 -----
+(Version: v1.0)
+2015-08-08  Masa Sakano
+ * Release Version 1. Fixed a bug it failed in multiple-filtering. Tidied up.
+
+-----
 (Version: v0.3)
 2015-08-07  Masa Sakano
+
  * Fixed a critical and a significant bugs in hook_user_insert().
-	logger_user.test is added for the simpletest.
-	LoggerUser::columnextra() returns an array now (not string).
-	"status" column is set to be FALSE if not found in users.
-	"Blocked" has a more priority than "never" in "status" to display.
+ * 	logger_user.test is added for the simpletest.
+ * 	LoggerUser::columnextra() returns an array now (not string).
+ * 	"status" column is set to be FALSE if not found in users.
+ * 	"Blocked" has a more priority than "never" in "status" to display.
 
 -----
 (Version: v0.2)

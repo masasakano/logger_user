@@ -104,8 +104,6 @@ class LoggerUser {
   **/
 	public static function select_columns($fmt, $purpose, $opts = array(), &$eachres = NULL) {
 
-		global $language;
-
 		$opts_def = array(
 			'tbls' => array('u', 'w', 'ur', 'r'),	// Default.
 			'use_own_db' => FALSE,
@@ -315,7 +313,7 @@ if (FALSE) {
 						$ardata[] = l(
 							sprintf('%d', $eachres->$eachcolname),
 							sprintf('admin/reports/event/%d', $eachres->$eachcolname),
-							array('language' => $language)
+							array('language' => $GLOBALS['language'])
 						);
 					}
 					else {
@@ -353,13 +351,27 @@ if (FALSE) {
 					break;
 
 				case 'message':
-					// $ardata[] = $eachres->$eachcolname; 
-					$ardata[] = 
-						format_string($eachres->$eachcolname, unserialize($eachres->variables));
+					if (empty($eachres->$eachcolname) || is_null($eachres->variables) ) {
+						$ardata[] = '';
+					} else {
+						$artmp = unserialize($eachres->variables);
+						if (empty($artmp)) {
+							$ardata[] = '';
+						}
+						else {
+							$a = array();
+							foreach ($artmp as $k => $v) {
+								$a[$k] = $v;
+							}
+							$ardata[] = 
+								format_string($eachres->$eachcolname, $a);
+							// For some reason unserialize($eachres->variables) does not work.
 //dpm(unserialize($eachres->variables)); 
 //$a=unserialize($eachres->variables); 
 // drupal_set_message('DEBUG-blob123 =', var_export($a, TRUE));
 //drupal_set_message('DEBUG-blob123 =', print_r($eachres->variables, TRUE));
+						}
+					}
 					break;
 
 				default:
