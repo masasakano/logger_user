@@ -1,6 +1,12 @@
 -----
+(Version: v1.0.1)
+2015-08-09  Masa Sakano
+ * Changes the module-display name, removing "Module". logger_user.test -> logger_user.test.php
+
+-----
 (Version: v1.0)
 2015-08-08  Masa Sakano
+
  * Release Version 1. Fixed a bug it failed in multiple-filtering. Tidied up.
 
 -----

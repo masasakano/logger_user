@@ -1,4 +1,4 @@
-name = "Logger-User Module"
+name = "Logger-User"
 description = "Log the users information for record."
 core = 7.x
 version = 7.x-0.0
