@@ -395,10 +395,10 @@ function logger_user_filters() {
 
 	if (LOGGER_USER_USE_OWN_DB) {
 		$all = LoggerUser::tablealiases('self')[0];	// 'l'
-		$tblalias = array( 'role' => $all, 'mail' => $all, );
+		$tblalias = array( 'role' => $all, 'status' => $all, 'mail' => $all, );
 	}
 	else {
-		$tblalias = array( 'role' => 'r',  'mail' => 'u', );
+		$tblalias = array( 'role' => 'r',  'status' => 'u',  'mail' => 'u', );	// Role from Role database, and the rest from User database.
 	}
 
   if (!empty($types)) {
@@ -408,6 +408,12 @@ function logger_user_filters() {
       'options' => $types,
     );
   }
+
+  $filters['status'] = array(
+    'title' => t('Login status'),
+		'where' => $tblalias['status'] . '.status = ?',
+		'options' => LoggerUser::get_ary_userstatus(),
+  );
 
   $filters['mail'] = array(
     'title' => t('Mail address'),
@@ -534,9 +540,12 @@ function logger_user_filter_form_validate($form, &$form_state) {
   if ($form_state['values']['op'] == t('Filter')) {
 //drupal_set_message('Validation starts. 025.', 'error');
     if (empty($form_state['values']['role']) &&
+	    	empty($form_state['values']['status']) &&
+		    empty($form_state['values']['mail']) &&
 	    	empty($form_state['values']['entriesperpage'])) {
 //drupal_set_message('Validation starts. 033.', 'error');
-      form_set_error('role', t('You must select something to filter by.'));
+			// Does nothing, because "Columns to display" may be changed.
+      // form_set_error('role', t('You must select something to filter by.'));
     }
     elseif ((! empty($form_state['values']['mail'])) &&
         		(preg_match(
@@ -551,7 +560,7 @@ function logger_user_filter_form_validate($form, &$form_state) {
     elseif ((! empty($form_state['values']['entriesperpage'])) &&
         		($form_state['values']['entriesperpage'] < 1)
 		       ) {
-			$msg = t('The number entries per page must be positive.');
+			$msg = t('The number of entries per page must be positive.');
       form_set_error('entriesperpage', $msg);
     }
   }

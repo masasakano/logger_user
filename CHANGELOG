@@ -1,6 +1,12 @@
 -----
+(Version: v1.1.1)
+2016-10-26  Masa Sakano
+ * Added a new filter based on the login status. Added LoggerUser::get_ary_userstatus in logger_user.common.inc.php for it.
+
+-----
 (Version: v1.0.1)
 2015-08-09  Masa Sakano
+
  * Changes the module-display name, removing "Module". logger_user.test -> logger_user.test.php
 
 -----

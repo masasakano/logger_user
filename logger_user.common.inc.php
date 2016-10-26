@@ -69,6 +69,24 @@ class LoggerUser {
 
 
   /**
+   * Returns the array of user status.
+   * 
+	 * This can (and should) be set up as a simple constant in the later versions
+	 * of PHP.
+	 *
+   * @return array
+   *   An array containing the human-readable word of User-login status.
+  **/
+	public static function get_ary_userstatus() {
+		$a = array(
+			0 => 'Blocked',
+			1 => 'Active',
+			2 => 'never'
+		);
+		return $a;
+	}
+
+  /**
    * Selects which columns to display.
    * 
    * @param string $fmt
@@ -120,11 +138,7 @@ class LoggerUser {
 			$aliasout = self::tablealiases('self')[0];	// 'l'
 		}
 
-		$hsuserstatus = array(
-			0 => 'Blocked',
-			1 => 'Active',
-			2 => 'never',
-		);
+		$hsuserstatus = self::get_ary_userstatus();
 
     $arbase = array(
       'uid'       => array('data' => t('UID'),  'field' => 'u.uid', 'sort' => 'desc'),
