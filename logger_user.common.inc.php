@@ -87,40 +87,21 @@ class LoggerUser {
 	}
 
   /**
-   * Selects which columns to display.
+   * Returns the arrays of columns to be used in select_columns()
    * 
-   * @param string $fmt
-   *   Choices: (concise|standard|all). Ignored for ARG[1]:$purpose=='colnames'
-   * @param string $purpose
-   *   Choices: (colnames|header|main)
+	 * An internal function (protected).
+	 *
    * @param array $opts
-   *   (optional) NULL or an associative array containing:
+   *   An associative array containing:
    *     - tbls: array. Default: array('u', 'w', 'ur', 'r'),
 	 *       namely, users, watchdog, users_roles, role
-   *     - use_own_db: boolean (Default: FALSE). True if using the own Database.
-   * @param object $eachres
-   *   (optional) Each of the return of @ref db_select()->execute(),
-   *     only read when $purpose=='main'.  Received as a reference.
+   *     - use_own_db: boolean. True if using its own Database.
    * @return array
-   *   - For the ARG[1] of 'colnames', returns the associative array
-	 *     for all the columns regardless of ARG[0], like:
-   *     @code
-   *    array('u' => array('uid', 'name'), 'w' => array('wid'),
-   *          'alias' => array('r' => array('name' => 'rolename')))
-   *     @endcode
-   *   - For the ARG[1] of 'header', an array of associative arrays like:
-   *     @code
-	 *    array(
-   *      array('data' => 'UID', 'field' => 'u.uid', 'sort' => 'desc'),
-   *      ...
-	 *    )
-   *     @endcode
-   *   - For the ARG[1] of 'main', an associative array of an array like:
-   *     @code
-	 *    array('data' => array(5, 1234, ...));
-   *     @endcode
+   *   - $arbase = array()
+   *   - $arcol2use = array()
+	 * @see select_columns
   **/
-	public static function select_columns($fmt, $purpose, $opts = array(), &$eachres = NULL) {
+	protected static function get_ary_base_columns($opts) {
 
 		$opts_def = array(
 			'tbls' => array('u', 'w', 'ur', 'r'),	// Default.
@@ -134,35 +115,39 @@ class LoggerUser {
 			$opts = $opts_def;
 		}
 
-		if ($opts['use_own_db']) {
-			$aliasout = self::tablealiases('self')[0];	// 'l'
-		}
-
-		$hsuserstatus = self::get_ary_userstatus();
-
-    $arbase = array(
-      'uid'       => array('data' => t('UID'),  'field' => 'u.uid', 'sort' => 'desc'),
-      'name'      => array('data' => t('User'), 'field' => 'u.name'),
-      'mail'      => array('data' => t('Mail'), 'field' => 'u.mail'),
-      'created'   => array('data' => t('Created'),       'field' => 'u.created', 'sort' => 'desc'),
-      'access'    => array('data' => t('Last access'),   'field' => 'u.access', 'sort' => 'desc'),
-      'login'     => array('data' => t('Last login'),    'field' => 'u.login', 'sort' => 'desc'),
-      'status'    => array('data' => t('Status'),        'field' => 'u.status'),
-      'timezone'  => array('data' => t('Time zone'),     'field' => 'u.timezone'),
-      'language'  => array('data' => t('Lang'),      'field' => 'u.language'),
-      'init'      => array('data' => t('Initial email'), 'field' => 'u.init'),
-      'wid'       => array('data' => t('WD ID'), 'field' => 'w.wid'),
-      'timestamp' => array('data' => t('WD Date'),  'field' => 'w.timestamp', 'sort' => 'desc'),
-      'hostname'  => array('data' => t('Hostname'), 'field' => 'w.hostname'),
-      'message'   => array('data' => t('Watchdog Message'), 'field' => 'w.message'),
-      'variables' => array('data' => t('WD Variables'), 'field' => 'w.variables'),
-      'link'      => array('data' => t('WD Link'),  'field' => 'w.link'),
-      'inusers'   => array('data' => t('In users?'),    'field' => 'l.inusers'),
-      'inwatchdog'=> array('data' => t('In watchdog?'), 'field' => 'l.inwatchdog'),
-      'adminregister' => array('data' => t('Registered by admin?'), 'field' => 'l.adminregister'),
-      'rid'       => array('data' => t('RID'),  'field' => 'ur.rid'),
-      'rolename'  => array('data' => t('Role'), 'field' => 'r.name'),
+    $hsbasebase = array(
+      'uid'       => array('UID',           'u.uid',     'desc'),
+      'name'      => array('User',          'u.name'),
+      'mail'      => array('Mail',          'u.mail'),
+      'created'   => array('Created',       'u.created', 'desc'),
+      'access'    => array('Last access',   'u.access',  'desc'),
+      'login'     => array('Last login',    'u.login',   'desc'),
+      'status'    => array('Status',        'u.status'),
+      'timezone'  => array('Time zone',     'u.timezone'),
+      'language'  => array('Lang',          'u.language'),
+      'init'      => array('Initial email', 'u.init'),
+      'wid'       => array('WD ID',            'w.wid'),
+      'timestamp' => array('WD Date',          'w.timestamp', 'desc'),
+      'hostname'  => array('Hostname',         'w.hostname'),
+      'message'   => array('Watchdog Message', 'w.message'),
+      'variables' => array('WD Variables',     'w.variables'),
+      'link'      => array('WD Link',          'w.link'),
+      'inusers'   => array('In users?',                'l.inusers'),
+      'inwatchdog'=> array('In watchdog?',             'l.inwatchdog'),
+      'adminregister' => array('Registered by admin?', 'l.adminregister'),
+      'rid'       => array('RID',     'ur.rid'),
+      'rolename'  => array('Role',    'r.name'),
     );
+
+    $arbase = array();
+    foreach ($hsbasebase as $ek => $eacha) {
+			$arbase[$ek] = array('data' => t($eacha[0]), 'field' => $eacha[1]);
+			if (3 == count($eacha)) {
+				$arbase[$ek]['sort'] = $eacha[2];
+			}
+			// Example:
+			//   $arbase['uid'] == array('data' => t('UID'), 'field' => 'u.uid', 'sort' => 'desc'),
+		}
 
     $arcol2use = array(
       'concise' => array(
@@ -211,6 +196,67 @@ class LoggerUser {
     foreach ($arkey2del as $eachk) {
       unset($arbase[$eachk]);
     }
+
+		return array($arbase, $arcol2use);
+
+	}	// protected static function get_ary_base_columns($opts = array()) {
+
+
+  /**
+   * Selects which columns to display.
+   * 
+   * @param string $fmt
+   *   Choices: (concise|standard|all). Ignored for ARG[1]:$purpose=='colnames'
+   * @param string $purpose
+   *   Choices: (colnames|header|main)
+   * @param array $opts
+   *   (optional) NULL or an associative array containing:
+   *     - tbls: array. Default: array('u', 'w', 'ur', 'r'),
+	 *       namely, users, watchdog, users_roles, role
+   *     - use_own_db: boolean (Default: FALSE). True if using its own Database.
+   * @param object $eachres
+   *   (optional) Each of the return of @ref db_select()->execute(),
+   *     only read when $purpose=='main'.  Received as a reference.
+   * @return array
+   *   - For the ARG[1] of 'colnames', returns the associative array
+	 *     for all the columns regardless of ARG[0], like:
+   *     @code
+   *    array('u' => array('uid', 'name'), 'w' => array('wid'),
+   *          'alias' => array('r' => array('name' => 'rolename')))
+   *     @endcode
+   *   - For the ARG[1] of 'header', an array of associative arrays like:
+   *     @code
+	 *    array(
+   *      array('data' => 'UID', 'field' => 'u.uid', 'sort' => 'desc'),
+   *      ...
+	 *    )
+   *     @endcode
+   *   - For the ARG[1] of 'main', an associative array of an array like:
+   *     @code
+	 *    array('data' => array(5, 1234, ...));
+   *     @endcode
+  **/
+	public static function select_columns($fmt, $purpose, $opts = array(), &$eachres = NULL) {
+
+		$opts_def = array(
+			'tbls' => array('u', 'w', 'ur', 'r'),	// Default.
+			'use_own_db' => FALSE,
+		);
+		if ($opts) {
+			$opts = array_merge($opts_def, $opts);
+		}
+		else {
+			// NULL is given.
+			$opts = $opts_def;
+		}
+
+		if ($opts['use_own_db']) {
+			$aliasout = self::tablealiases('self')[0];	// 'l'
+		}
+
+		$hsuserstatus = self::get_ary_userstatus();
+
+    list($arbase, $arcol2use) = self::get_ary_base_columns($opts);
 
     switch($purpose){
     case 'colnames':
@@ -514,7 +560,7 @@ if (FALSE) {
 
 
   /**
-   * Return the number of the updated columns related to the given Table alias.
+   * Returns the number of the updated columns related to the given Table alias.
 	 *
 	 * @param array $aliases
 	 *   eg., array('u', 'ur', 'w'), or self::tablealiases()
@@ -527,17 +573,19 @@ if (FALSE) {
 
     $aliasout = self::tablealiases('self')[0];
 		$hswhere = array(
-			'u'  => 'l.uid = u.uid AND (l.created = u.created OR l.created < 1)',
+			'u'  => 'l.uid = u.uid AND u.uid > 0 AND (l.created = u.created OR l.created < 1)',
 			'ur' => 'l.uid = ur.uid AND l.rid != ur.rid',
 			'w'  => implode(
 				' AND ',
 				array(
+					"l.uid > 0",
 					"w.type = 'user'",
 					self::SQL_WD_SUBSTR_COND_NEW,
 					self::SQL_WD_SUBSTR_UID . ' = l.uid',
 				)
 			),
 		);
+drupal_set_message('var=' . var_export($hswhere, true), 'status');
 
 		foreach ($aliases as $aliasin) {
 			// Main loop for updating Table 'logger_user_users'
@@ -639,6 +687,55 @@ if (FALSE) {
 
 
   /**
+   * Returns the column names in/out to insert into the table.
+   * 
+   * @param string $aliasin
+   *   Table alias name, eg, 'u' (for Table users)
+   * @return array
+   *   An associative array containing:
+   *   - arcolname: array for input
+   *   - arcoloutname: array for output
+  **/
+	protected static function get_colinoutnames2insert($aliasin) {
+
+		$arcolname = array();
+		$arcoloutname = array();
+		$allfields = self::select_columns(
+			'all',	// All the columns
+			'colnames',
+			array('tbls' => array($aliasin))
+		);	// eg., array('wid', 'hostname', ...)
+
+		// Constructing a string for "INSERT INTO", ie., "u.uid, u.name, ...".
+		foreach ($allfields as $k => $eacha) {
+			if ($aliasin != $k) {
+				continue;	// Should not happen.
+			}
+			foreach ($eacha as $eachv) {
+				// nb, UID is needed; Otherwise all columns are regarded as UID==0.
+				$arcolname[] = sprintf('%s.%s', $aliasin, $eachv);
+				$arcoloutname[] = $eachv;
+			}
+		}
+
+		$s = self::columnextra($aliasin);
+		if (! empty($s)) {
+			$arcolname[] = '1';
+			$arcoloutname[] = $s[0];	// eg. "inusers"
+		}
+
+		if ('w' === $aliasin) {
+			// Add 'uid' in the case of watchdog.
+			// Otherwise, it would be rejected, because uid is the primary key.
+			array_unshift($arcolname, self::SQL_WD_SUBSTR_UID);
+			array_unshift($arcoloutname, 'uid');
+		}
+
+		return array($arcolname, $arcoloutname);
+	}	// protected static function get_colinoutnames2insert()
+
+
+  /**
    * Return the number of the inserted columns related to the given Table alias.
 	 *
 	 * @param array $aliases
@@ -677,43 +774,14 @@ if (FALSE) {
 			// the record of those appear only in watchdog but not in users.
 
 			if ('r' == $aliasin OR 'ur' == $aliasin) {
-				// No column inserted due to updated Table users_roles
+				// No column inserted for updated Table users_roles
 				continue;
 			}
 
 			$dbin = self::tablename($aliasin);
-			$allfields = self::select_columns(
-				'all',	// All the columns
-				'colnames',
-				array('tbls' => array($aliasin))
-			);	// eg., array('wid', 'hostname', ...)
 
 			// Constructing a string for "INSERT INTO", ie., "u.uid, u.name, ...".
-			$arcolname = array();
-			$arcoloutname = array();
-			foreach ($allfields as $k => $eacha) {
-				if ($aliasin != $k) {
-					continue;	// Should not happen.
-				}
-				foreach ($eacha as $eachv) {
-					// nb, UID is needed; Otherwise all columns are regarded as UID==0.
-					$arcolname[] = sprintf('%s.%s', $aliasin, $eachv);
-					$arcoloutname[] = $eachv;
-				}
-			}
-
-			$s = self::columnextra($aliasin);
-			if (! empty($s)) {
-				$arcolname[] = '1';
-				$arcoloutname[] = $s[0];	// eg. "inusers"
-			}
-
-			if ('w' === $aliasin) {
-				// Add 'uid' in the case of watchdog.
-				// Otherwise, it would be rejected, because uid is the primary key.
-				array_unshift($arcolname, self::SQL_WD_SUBSTR_UID);
-				array_unshift($arcoloutname, 'uid');
-			}
+			list($arcolname, $arcoloutname) = self::get_colinoutnames2insert($aliasin);
 
 			$query = sprintf(
 				'INSERT IGNORE INTO {%s} (%s) SELECT %s FROM {%s} AS %s WHERE %s ORDER BY %s;',
@@ -756,18 +824,18 @@ if (FALSE) {
 
 
   /**
-   * Updates name and init (email) based on watchdog information.
+   * Updates name and init (email) and created based on watchdog information.
    *
-   * Background is as follows.
+   * The background is as follows.
    * When user accounts were cancelled before this module is enabled,
    * those user information no longer exists in "users" table.
    * However, the record may remain in "watchdog".
    * In that case, it is possible to retrieve the user name and email address
 	 * when the user is registered from the watchdog table: the column
-	 * "variables", which is copied into the our table, logger_user_users.
+	 * "variables", which is copied into the table, logger_user_users.
    *
-	 * This routine tries to recover those two information, which will be
-	 * stored in the column "name" and "init".
+	 * This routine tries to recover those three pieces of information,
+	 * which will be stored in the columns "name", "init", and "created".
 	 * Note the "variables" column is a bynary-type data, hence it is tricky
 	 * to deal within the SQL. We update those rows one by one with Drupal.
 	 * It is expected there aren't a huge number of such rows, so it'd be OK.
@@ -848,7 +916,7 @@ if (FALSE) {
 
 
   /**
-   * Initialise Database table logger_user_users
+   * Updates Database table logger_user_users
    *
    * Algorithm is,
    *   1. UPDATE (existing rows, reflecting the newest parent tables).
@@ -901,7 +969,7 @@ if (FALSE) {
     if ($hsnrow['initial'] > 0) {
 			// Not fired in the very first run after the module is enabled.
 			$hsnrow['update'] =
-				self::update_db_users_update(self::tablealiases('update_db'));
+				self::update_db_users_update(self::tablealiases('update_db'));	// u, ur, w
     }
 
 

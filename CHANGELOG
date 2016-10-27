@@ -1,6 +1,12 @@
 -----
+(Version: v1.1.2)
+2016-10-27  Masa Sakano
+ * Tidied up the code.
+
+-----
 (Version: v1.1.1)
 2016-10-26  Masa Sakano
+
  * Added a new filter based on the login status. Added LoggerUser::get_ary_userstatus in logger_user.common.inc.php for it.
 
 -----
