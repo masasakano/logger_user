@@ -1,6 +1,12 @@
 -----
+(Version: v1.1.4)
+2016-10-27  Masa Sakano
+ * Removed an explicit debug message in logger_user.common.inc.php .
+
+-----
 (Version: v1.1.3)
 2016-10-27  Masa Sakano
+
  * Upgraded the Version 7.x-1.1 in logger_user.info .
 
 -----

@@ -585,7 +585,6 @@ if (FALSE) {
 				)
 			),
 		);
-drupal_set_message('var=' . var_export($hswhere, true), 'status');
 
 		foreach ($aliases as $aliasin) {
 			// Main loop for updating Table 'logger_user_users'
